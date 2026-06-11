@@ -1,0 +1,26 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Deploy: Render Dashboard → New → Blueprint → connect repo
+
+services:
+  - type: web
+    name: vidadura-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npx turbo build --filter=@lifehub/api && cd apps/api && npx prisma generate
+    startCommand: cd apps/api && npx prisma db push && node dist/main
+    healthCheckPath: /api/docs
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_EXPIRATION
+        value: 15m
+      - key: JWT_REFRESH_EXPIRATION
+        value: 7d
+      - key: FRONTEND_URL
+        sync: false

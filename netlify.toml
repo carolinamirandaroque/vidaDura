@@ -1,0 +1,17 @@
+[build]
+  command = "npm ci && npx turbo build --filter=@lifehub/web"
+  publish = "apps/web/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA — keep PWA assets (sw.js, manifest) served as files
+[[redirects]]
+  from = "/assets/*"
+  to = "/assets/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

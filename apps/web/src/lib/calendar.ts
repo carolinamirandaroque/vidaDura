@@ -1,0 +1,126 @@
+import { addDays, endOfDay, getMonthRange, getWeekRange, isToday, startOfDay } from '@lifehub/utils';
+import type { Event } from '@lifehub/types';
+
+export interface CalendarDay {
+  date: Date;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+}
+
+export function getMonthGridDays(date: Date): CalendarDay[] {
+  const month = date.getMonth();
+  const firstOfMonth = new Date(date.getFullYear(), month, 1);
+
+  let startOffset = firstOfMonth.getDay() - 1;
+  if (startOffset < 0) startOffset = 6;
+
+  const gridStart = addDays(firstOfMonth, -startOffset);
+
+  return Array.from({ length: 42 }, (_, i) => {
+    const d = addDays(gridStart, i);
+    return {
+      date: d,
+      isCurrentMonth: d.getMonth() === month,
+      isToday: isToday(d),
+    };
+  });
+}
+
+export function getWeekDays(date: Date): CalendarDay[] {
+  const { start } = getWeekRange(date);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = addDays(start, i);
+    return { date: d, isCurrentMonth: true, isToday: isToday(d) };
+  });
+}
+
+export function getWeekdayLabels(locale: string): string[] {
+  const monday = new Date(2024, 0, 1);
+  return Array.from({ length: 7 }, (_, i) =>
+    addDays(monday, i).toLocaleDateString(locale, { weekday: 'short' }),
+  );
+}
+
+export function eventOnDay(event: Event, day: Date): boolean {
+  const dayStart = startOfDay(day);
+  const dayEnd = endOfDay(day);
+  const eventStart = new Date(event.startDate);
+  const eventEnd = new Date(event.endDate);
+  return eventStart <= dayEnd && eventEnd >= dayStart;
+}
+
+export function eventsForDay(events: Event[], day: Date): Event[] {
+  return events
+    .filter((e) => eventOnDay(e, day))
+    .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+}
+
+export function getViewRange(view: string, date: Date): { start: Date; end: Date } {
+  switch (view) {
+    case 'day': {
+      const start = startOfDay(date);
+      return { start, end: endOfDay(date) };
+    }
+    case 'week':
+      return getWeekRange(date);
+    case 'agenda': {
+      const start = startOfDay(date);
+      const end = addDays(start, 30);
+      end.setHours(23, 59, 59, 999);
+      return { start, end };
+    }
+    case 'month':
+    default: {
+      const grid = getMonthGridDays(date);
+      const start = startOfDay(grid[0].date);
+      const end = endOfDay(grid[grid.length - 1].date);
+      return { start, end };
+    }
+  }
+}
+
+export function navigateDate(view: string, date: Date, dir: -1 | 1): Date {
+  const d = new Date(date);
+  switch (view) {
+    case 'day':
+      d.setDate(d.getDate() + dir);
+      break;
+    case 'week':
+      d.setDate(d.getDate() + dir * 7);
+      break;
+    case 'agenda':
+      d.setDate(d.getDate() + dir * 14);
+      break;
+    case 'month':
+    default:
+      d.setMonth(d.getMonth() + dir);
+      break;
+  }
+  return d;
+}
+
+export function formatViewTitle(view: string, date: Date, locale: string): string {
+  switch (view) {
+    case 'day':
+      return date.toLocaleDateString(locale, {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+    case 'week': {
+      const { start, end } = getWeekRange(date);
+      const opts: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
+      return `${start.toLocaleDateString(locale, opts)} – ${end.toLocaleDateString(locale, { ...opts, year: 'numeric' })}`;
+    }
+    case 'agenda': {
+      const end = addDays(date, 30);
+      return `${date.toLocaleDateString(locale, { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    }
+    case 'month':
+    default:
+      return date.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
+  }
+}
+
+export { getMonthRange };

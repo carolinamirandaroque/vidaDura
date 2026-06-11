@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lifehub-postgres
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: lifehub
+      POSTGRES_PASSWORD: lifehub
+      POSTGRES_DB: lifehub
+    volumes:
+      - lifehub_pg_data:/var/lib/postgresql/data
+
+volumes:
+  lifehub_pg_data:
