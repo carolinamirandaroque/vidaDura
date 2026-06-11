@@ -6,7 +6,7 @@ services:
     name: vidadura-api
     runtime: node
     plan: free
-    buildCommand: npm ci --include=dev && npx turbo build --filter=@lifehub/api && cd apps/api && npx prisma generate && npx prisma db push
+    buildCommand: bash scripts/render-build.sh
     startCommand: cd apps/api && node dist/main
     healthCheckPath: /api/docs
     envVars:
