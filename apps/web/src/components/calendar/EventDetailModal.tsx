@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -13,6 +13,7 @@ import {
   PartyPopper,
   CalendarDays,
   Package,
+  Trash2,
 } from 'lucide-react';
 import {
   Dialog,
@@ -38,6 +39,7 @@ import { ExpenseCard } from '@/components/expenses/ExpenseCard';
 import { useFormatters } from '@/hooks/useFormatters';
 import { useAuthStore } from '@/stores/auth.store';
 import { getInitials } from '@lifehub/utils';
+import { ContactMultiSelect } from '@/components/shared/ContactMultiSelect';
 import type { HubEventType, EventItemType, Task, User, EventDetail } from '@lifehub/types';
 
 const typeIcons: Record<HubEventType, typeof CalendarDays> = {
@@ -171,6 +173,7 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
   const [newItemTitle, setNewItemTitle] = useState('');
   const [newItemType, setNewItemType] = useState<EventItemType>('buy');
   const [newItemAssigneeId, setNewItemAssigneeId] = useState<string | undefined>();
+  const [inviteIds, setInviteIds] = useState<string[]>([]);
 
   const { data: detail, isLoading } = useQuery({
     queryKey: ['event-detail', eventId],
@@ -188,6 +191,14 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
       detail?.items.filter((item) => item.assigneeId && item.assigneeId === currentUser?.id) ?? [],
     [detail, currentUser],
   );
+
+  const isCreator = detail?.createdById === currentUser?.id;
+
+  useEffect(() => {
+    if (detail?.participants) {
+      setInviteIds(detail.participants.map((p) => p.userId));
+    }
+  }, [detail?.id, detail?.participants]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['event-detail', eventId] });
@@ -257,6 +268,20 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
     onSuccess: invalidate,
   });
 
+  const inviteMutation = useMutation({
+    mutationFn: () => api.updateEvent(eventId!, { participantIds: inviteIds }),
+    onSuccess: invalidate,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.deleteEvent(eventId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      onOpenChange(false);
+    },
+  });
+
   if (!eventId) return null;
 
   const Icon = detail ? typeIcons[detail.type] : CalendarDays;
@@ -290,6 +315,21 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
                     </span>
                   </div>
                 </div>
+                {isCreator && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    disabled={deleteMutation.isPending}
+                    onClick={() => {
+                      if (window.confirm(t('eventHub.deleteConfirm'))) {
+                        deleteMutation.mutate();
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </DialogHeader>
 
@@ -305,7 +345,30 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
               </div>
             )}
 
-            {detail.participants && detail.participants.length > 0 && (
+            {isCreator && (
+              <div className="space-y-3 rounded-lg border p-3">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <h3 className="text-sm font-semibold">{t('eventHub.inviteContacts')}</h3>
+                </div>
+                <p className="text-xs text-muted-foreground">{t('eventHub.inviteHint')}</p>
+                <ContactMultiSelect
+                  currentUserId={currentUser?.id}
+                  selectedIds={inviteIds}
+                  onChange={setInviteIds}
+                />
+                <Button
+                  size="sm"
+                  className="w-full"
+                  disabled={inviteMutation.isPending}
+                  onClick={() => inviteMutation.mutate()}
+                >
+                  {t('eventHub.saveInvites')}
+                </Button>
+              </div>
+            )}
+
+            {!isCreator && detail.participants && detail.participants.length > 0 && (
               <div className="flex items-center gap-2">
                 <Users className="h-4 w-4 text-muted-foreground" />
                 <div className="flex -space-x-2">

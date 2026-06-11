@@ -153,8 +153,26 @@ export class EventsService {
     if (!existing) throw new NotFoundException('Event not found');
     await this.checkCalendarAccess(existing.calendarId, userId, 'editor');
 
+    const previousParticipantIds = new Set(
+      existing.participants?.map((p) => p.userId) ?? [],
+    );
+
     const event = await this.eventsRepo.update(id, dto);
     const mapped = this.mapEvent(event);
+
+    if (dto.participantIds) {
+      for (const participantId of dto.participantIds) {
+        if (participantId !== userId && !previousParticipantIds.has(participantId)) {
+          await this.notificationsService.create({
+            userId: participantId,
+            type: 'event_invite',
+            title: 'Convite para evento',
+            message: `Foste convidado para "${event.title}"`,
+            data: { eventId: event.id },
+          });
+        }
+      }
+    }
 
     const notifyIds = event.participants?.map((p) => p.userId) ?? [];
     this.wsGateway.emitToUsers(notifyIds, 'event_updated', mapped);
@@ -164,8 +182,14 @@ export class EventsService {
   async remove(userId: string, id: string) {
     const existing = await this.eventsRepo.findById(id);
     if (!existing) throw new NotFoundException('Event not found');
+    if (existing.createdById !== userId) {
+      throw new ForbiddenException('Only the event creator can delete it');
+    }
     await this.checkCalendarAccess(existing.calendarId, userId, 'editor');
+
+    const notifyIds = existing.participants?.map((p) => p.userId) ?? [];
     await this.eventsRepo.delete(id);
+    this.wsGateway.emitToUsers(notifyIds, 'event_deleted', { id });
   }
 
   async respondToInvite(userId: string, eventId: string, status: 'accepted' | 'declined') {

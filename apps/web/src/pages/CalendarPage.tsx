@@ -17,6 +17,8 @@ import {
   Label,
 } from '@lifehub/ui';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/auth.store';
+import { ContactMultiSelect } from '@/components/shared/ContactMultiSelect';
 import { getViewRange, navigateDate, formatViewTitle } from '@/lib/calendar';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { MonthGrid } from '@/components/calendar/MonthGrid';
@@ -35,6 +37,7 @@ import type { Event, EventView, HubEventType } from '@lifehub/types';
 
 export function CalendarPage() {
   const { t, i18n } = useTranslation();
+  const currentUser = useAuthStore((s) => s.user);
   const locale = i18n.language === 'pt-PT' ? 'pt-PT' : 'en';
   const [view, setView] = useState<EventView>('month');
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -48,6 +51,7 @@ export function CalendarPage() {
     endDate: '',
     calendarId: '',
     type: 'general' as HubEventType,
+    participantIds: [] as string[],
   });
   const queryClient = useQueryClient();
 
@@ -70,7 +74,14 @@ export function CalendarPage() {
       queryClient.invalidateQueries({ queryKey: ['events'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       setDialogOpen(false);
-      setNewEvent({ title: '', startDate: '', endDate: '', calendarId: '', type: 'general' });
+      setNewEvent({
+        title: '',
+        startDate: '',
+        endDate: '',
+        calendarId: '',
+        type: 'general',
+        participantIds: [],
+      });
     },
     onError: (err: Error) => setCreateError(err.message),
   });
@@ -133,6 +144,8 @@ export function CalendarPage() {
                     calendarId,
                     startDate: new Date(newEvent.startDate).toISOString(),
                     endDate: new Date(newEvent.endDate).toISOString(),
+                    participantIds:
+                      newEvent.participantIds.length > 0 ? newEvent.participantIds : undefined,
                   });
                 }}
               >
@@ -180,6 +193,14 @@ export function CalendarPage() {
                     value={newEvent.endDate}
                     onChange={(e) => setNewEvent({ ...newEvent, endDate: e.target.value })}
                     required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('eventHub.inviteContacts')}</Label>
+                  <ContactMultiSelect
+                    currentUserId={currentUser?.id}
+                    selectedIds={newEvent.participantIds}
+                    onChange={(participantIds) => setNewEvent({ ...newEvent, participantIds })}
                   />
                 </div>
                 {createError && (

@@ -492,6 +492,7 @@ export interface ApiError {
 export type WsEvent =
   | 'notification'
   | 'event_updated'
+  | 'event_deleted'
   | 'task_updated'
   | 'expense_updated'
   | 'connection_updated';

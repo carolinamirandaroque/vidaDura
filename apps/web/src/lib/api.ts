@@ -16,6 +16,7 @@ import type {
   DashboardData,
   CreateCalendarDto,
   CreateEventDto,
+  UpdateEventDto,
   CreateTaskDto,
   CreateExpenseDto,
   UpdateExpenseDto,
@@ -214,6 +215,14 @@ class ApiClient {
 
   createEvent = (dto: CreateEventDto) => {
     return this.request<Event>('/events', { method: 'POST', body: JSON.stringify(dto) });
+  };
+
+  updateEvent = (id: string, dto: UpdateEventDto) => {
+    return this.request<Event>(`/events/${id}`, { method: 'PATCH', body: JSON.stringify(dto) });
+  };
+
+  deleteEvent = (id: string) => {
+    return this.request<void>(`/events/${id}`, { method: 'DELETE' });
   };
 
   getEventDetail = (id: string) => {

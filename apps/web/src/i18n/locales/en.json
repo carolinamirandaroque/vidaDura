@@ -151,6 +151,11 @@
       "other": "Other"
     },
     "participants": "participants",
+    "inviteContacts": "Invite contacts",
+    "inviteHint": "Invited contacts see the event on their calendar and get a notification.",
+    "saveInvites": "Save invites",
+    "deleteConfirm": "Delete this event? This cannot be undone.",
+    "noContactsHint": "No accepted contacts — add them in",
     "people": "People",
     "tasks": "Tasks",
     "expenses": "Expenses",
