@@ -2,7 +2,9 @@
 set -euo pipefail
 
 npm ci --include=dev
-npm run build:api:deploy
 cd apps/api
 npx prisma generate
+cd ../..
+npm run build:api:deploy
+cd apps/api
 npx prisma db push
