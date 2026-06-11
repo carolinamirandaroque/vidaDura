@@ -8,13 +8,15 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
+const googleOAuthProviders = process.env.GOOGLE_CLIENT_ID ? [GoogleStrategy] : [];
+
 @Module({
   imports: [PassportModule.register({ defaultStrategy: 'jwt' }), JwtModule.register({})],
   controllers: [AuthController],
   providers: [
     AuthService,
     JwtStrategy,
-    GoogleStrategy,
+    ...googleOAuthProviders,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
   exports: [AuthService, JwtModule],
