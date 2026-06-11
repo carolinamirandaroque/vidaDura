@@ -35,6 +35,20 @@ import type {
 
 const API_URL = import.meta.env.VITE_API_URL || '/api';
 
+function parseJsonBody<T>(text: string, context: string): T {
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    if (text.trimStart().startsWith('<!')) {
+      throw new Error(
+        `${context}: received HTML instead of JSON. Set VITE_API_URL to your Render API (…/api) and redeploy Netlify.`,
+      );
+    }
+    throw new Error(`${context}: invalid response`);
+  }
+}
+
 class ApiClient {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
@@ -88,13 +102,14 @@ class ApiClient {
         this.onUnauthorized?.();
       }
       const errText = await response.text();
-      const error = errText ? JSON.parse(errText) : { message: 'Request failed' };
+      const error = errText
+        ? parseJsonBody<{ message?: string }>(errText, 'API error')
+        : { message: 'Request failed' };
       throw new Error(error.message || 'Request failed');
     }
 
     const text = await response.text();
-    if (!text) return undefined as T;
-    return JSON.parse(text) as T;
+    return parseJsonBody<T>(text, 'API response');
   };
 
   private tryRefresh = async (): Promise<boolean> => {
