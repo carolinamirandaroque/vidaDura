@@ -105,6 +105,24 @@ export class EventsService {
     }
   }
 
+  private async assertCanViewEvent(
+    event: {
+      id: string;
+      calendarId: string;
+      createdById: string;
+      participants?: Array<{ userId: string }>;
+    },
+    userId: string,
+  ) {
+    if (await this.eventsRepo.isDismissed(event.id, userId)) {
+      throw new NotFoundException('Event not found');
+    }
+    const isCreator = event.createdById === userId;
+    const isParticipant = event.participants?.some((p) => p.userId === userId);
+    if (isCreator || isParticipant) return;
+    await this.checkCalendarAccess(event.calendarId, userId);
+  }
+
   async findAll(userId: string, start?: string, end?: string) {
     const events = await this.eventsRepo.findByUser(
       userId,
@@ -117,7 +135,7 @@ export class EventsService {
   async findOne(userId: string, id: string) {
     const event = await this.eventsRepo.findById(id);
     if (!event) throw new NotFoundException('Event not found');
-    await this.checkCalendarAccess(event.calendarId, userId);
+    await this.assertCanViewEvent(event, userId);
     return this.mapEvent(event);
   }
 
@@ -182,14 +200,31 @@ export class EventsService {
   async remove(userId: string, id: string) {
     const existing = await this.eventsRepo.findById(id);
     if (!existing) throw new NotFoundException('Event not found');
-    if (existing.createdById !== userId) {
-      throw new ForbiddenException('Only the event creator can delete it');
-    }
-    await this.checkCalendarAccess(existing.calendarId, userId, 'editor');
+    await this.assertCanViewEvent(existing, userId);
 
-    const notifyIds = existing.participants?.map((p) => p.userId) ?? [];
-    await this.eventsRepo.delete(id);
-    this.wsGateway.emitToUsers(notifyIds, 'event_deleted', { id });
+    const otherParticipantIds = (existing.participants ?? [])
+      .map((p) => p.userId)
+      .filter((uid) => uid !== userId);
+    const isCreator = existing.createdById === userId;
+    const isParticipant = existing.participants?.some((p) => p.userId === userId);
+
+    if (isCreator) {
+      if (otherParticipantIds.length === 0) {
+        await this.eventsRepo.delete(id);
+        this.wsGateway.emitToUsers([], 'event_deleted', { id });
+        return;
+      }
+      await this.eventsRepo.dismissForUser(id, userId);
+    } else if (isParticipant) {
+      await this.eventsRepo.removeParticipant(id, userId);
+    } else {
+      await this.eventsRepo.dismissForUser(id, userId);
+    }
+
+    const notifyIds = [...new Set([existing.createdById, ...otherParticipantIds])].filter(
+      (uid) => uid !== userId,
+    );
+    this.wsGateway.emitToUsers(notifyIds, 'event_updated', { id, removedBy: userId });
   }
 
   async respondToInvite(userId: string, eventId: string, status: 'accepted' | 'declined') {
@@ -337,7 +372,7 @@ export class EventsService {
   async getDetail(userId: string, id: string): Promise<EventDetail> {
     const event = await this.eventsRepo.findDetailById(id);
     if (!event) throw new NotFoundException('Event not found');
-    await this.checkCalendarAccess(event.calendarId, userId);
+    await this.assertCanViewEvent(event, userId);
 
     const flatTasks = event.tasks.map((t) => this.mapTask(t));
     const taskTree = buildTaskTree(flatTasks);

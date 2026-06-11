@@ -61,6 +61,7 @@ export class EventsRepository {
   findByUser(userId: string, start?: Date, end?: Date) {
     return this.prisma.event.findMany({
       where: {
+        dismissals: { none: { userId } },
         OR: [
           { createdById: userId },
           { participants: { some: { userId } } },
@@ -139,6 +140,26 @@ export class EventsRepository {
 
   delete(id: string) {
     return this.prisma.event.delete({ where: { id } });
+  }
+
+  isDismissed(eventId: string, userId: string) {
+    return this.prisma.eventDismissal.findUnique({
+      where: { eventId_userId: { eventId, userId } },
+    });
+  }
+
+  dismissForUser(eventId: string, userId: string) {
+    return this.prisma.eventDismissal.upsert({
+      where: { eventId_userId: { eventId, userId } },
+      create: { eventId, userId },
+      update: {},
+    });
+  }
+
+  removeParticipant(eventId: string, userId: string) {
+    return this.prisma.eventParticipant.deleteMany({
+      where: { eventId, userId },
+    });
   }
 
   updateParticipantStatus(eventId: string, userId: string, status: 'accepted' | 'declined') {

@@ -315,21 +315,26 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
                     </span>
                   </div>
                 </div>
-                {isCreator && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    disabled={deleteMutation.isPending}
-                    onClick={() => {
-                      if (window.confirm(t('eventHub.deleteConfirm'))) {
-                        deleteMutation.mutate();
-                      }
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  disabled={deleteMutation.isPending}
+                  title={t('eventHub.removeFromCalendar')}
+                  onClick={() => {
+                    const hasOthers =
+                      detail.createdById !== currentUser?.id ||
+                      (detail.participants?.some((p) => p.userId !== currentUser?.id) ?? false);
+                    const message = hasOthers
+                      ? `${t('eventHub.deleteConfirm')}\n\n${t('eventHub.deleteConfirmOthers')}`
+                      : t('eventHub.deleteConfirm');
+                    if (window.confirm(message)) {
+                      deleteMutation.mutate();
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
             </DialogHeader>
 

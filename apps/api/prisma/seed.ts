@@ -12,6 +12,7 @@ async function clearDatabase() {
   await prisma.expense.deleteMany();
   await prisma.eventItem.deleteMany();
   await prisma.task.deleteMany();
+  await prisma.eventDismissal.deleteMany();
   await prisma.eventParticipant.deleteMany();
   await prisma.event.deleteMany();
   await prisma.calendarMember.deleteMany();

@@ -88,6 +88,7 @@ model User {
   calendarMemberships CalendarMember[]
   createdEvents       Event[]            @relation("EventCreator")
   eventParticipations EventParticipant[]
+  eventDismissals     EventDismissal[]
   tasks               Task[]             @relation("TaskOwner")
   assignedTasks       Task[]             @relation("TaskAssignee")
   createdExpenses     Expense[]          @relation("ExpenseCreator")
@@ -247,6 +248,7 @@ model Event {
   calendar     Calendar           @relation(fields: [calendarId], references: [id], onDelete: Cascade)
   createdBy    User               @relation("EventCreator", fields: [createdById], references: [id], onDelete: Cascade)
   participants EventParticipant[]
+  dismissals   EventDismissal[]
   tasks        Task[]
   expenses     Expense[]
   items        EventItem[]
@@ -295,6 +297,21 @@ model EventParticipant {
   @@index([eventId])
   @@index([userId])
   @@map("event_participants")
+}
+
+model EventDismissal {
+  id        String   @id @default(cuid())
+  eventId   String
+  userId    String
+  createdAt DateTime @default(now())
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+  @@map("event_dismissals")
 }
 
 model Task {
