@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
-import { buildTaskTree, validateShares } from '@lifehub/utils';
+import { advanceDeadlineDates, buildTaskTree, validateShares } from '@lifehub/utils';
 import { CalendarsRepository } from '../calendars/calendars.repository';
 import { CalendarsService } from '../calendars/calendars.service';
 import { EventsRepository } from './events.repository';
@@ -40,6 +40,7 @@ export class EventsService {
   mapEvent(event: {
     id: string;
     calendarId: string;
+    kind?: string;
     type?: string;
     title: string;
     description: string | null;
@@ -49,6 +50,8 @@ export class EventsService {
     allDay: boolean;
     recurrence: string;
     recurrenceEnd: Date | null;
+    deadlineStatus?: string | null;
+    completedAt?: Date | null;
     createdById: string;
     createdAt: Date;
     updatedAt: Date;
@@ -64,7 +67,8 @@ export class EventsService {
     return {
       id: event.id,
       calendarId: event.calendarId,
-      type: (event.type ?? 'general') as Event['type'],
+      kind: (event.kind ?? 'appointment') as Event['kind'],
+      type: (event.type ?? 'social') as Event['type'],
       title: event.title,
       description: event.description,
       location: event.location,
@@ -73,6 +77,8 @@ export class EventsService {
       allDay: event.allDay,
       recurrence: event.recurrence as Event['recurrence'],
       recurrenceEnd: event.recurrenceEnd?.toISOString() ?? null,
+      deadlineStatus: (event.deadlineStatus as Event['deadlineStatus']) ?? null,
+      completedAt: event.completedAt?.toISOString() ?? null,
       createdById: event.createdById,
       createdAt: event.createdAt.toISOString(),
       updatedAt: event.updatedAt.toISOString(),
@@ -148,7 +154,7 @@ export class EventsService {
     const event = await this.eventsRepo.create(userId, { ...dto, calendarId });
     const mapped = this.mapEvent(event);
 
-    if (dto.participantIds?.length) {
+    if (dto.kind !== 'deadline' && dto.participantIds?.length) {
       for (const participantId of dto.participantIds) {
         if (participantId !== userId) {
           await this.notificationsService.create({
@@ -163,6 +169,53 @@ export class EventsService {
       }
     }
 
+    return mapped;
+  }
+
+  async completeDeadline(userId: string, id: string) {
+    const existing = await this.eventsRepo.findById(id);
+    if (!existing) throw new NotFoundException('Event not found');
+    await this.assertCanViewEvent(existing, userId);
+
+    if (existing.kind !== 'deadline') {
+      throw new BadRequestException('Not a deadline reminder');
+    }
+
+    const now = new Date();
+
+    if (existing.recurrence !== 'none') {
+      const { startDate, endDate } = advanceDeadlineDates(
+        existing.endDate,
+        existing.recurrence as Event['recurrence'],
+      );
+
+      if (existing.recurrenceEnd && endDate > existing.recurrenceEnd) {
+        const event = await this.eventsRepo.update(id, {
+          deadlineStatus: 'done',
+          completedAt: now.toISOString(),
+        });
+        const mapped = this.mapEvent(event);
+        this.wsGateway.emitToUsers([existing.createdById], 'event_updated', mapped);
+        return mapped;
+      }
+
+      const event = await this.eventsRepo.update(id, {
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        deadlineStatus: 'pending',
+        completedAt: null,
+      });
+      const mapped = this.mapEvent(event);
+      this.wsGateway.emitToUsers([existing.createdById], 'event_updated', mapped);
+      return mapped;
+    }
+
+    const event = await this.eventsRepo.update(id, {
+      deadlineStatus: 'done',
+      completedAt: now.toISOString(),
+    });
+    const mapped = this.mapEvent(event);
+    this.wsGateway.emitToUsers([existing.createdById], 'event_updated', mapped);
     return mapped;
   }
 
@@ -430,11 +483,6 @@ export class EventsService {
 
     if (!validateShares(dto.amount, dto.shares)) {
       throw new BadRequestException('Share amounts must equal total expense amount');
-    }
-
-    const paidById = dto.paidById ?? userId;
-    if (!dto.shares.some((s) => s.userId === paidById)) {
-      throw new BadRequestException('Payer must be included in the expense split');
     }
 
     const expense = await this.expensesRepo.create(userId, dto, eventId);

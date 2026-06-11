@@ -8,6 +8,7 @@ import { useThemeStore } from '@/stores/theme.store';
 import { api } from '@/lib/api';
 import { getInitials } from '@lifehub/utils';
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher';
+import { PaddleBoardIcon } from '@/components/shared/PaddleBoardIcon';
 
 export function Header() {
   const { t } = useTranslation();
@@ -22,7 +23,8 @@ export function Header() {
 
   return (
     <header className="flex h-16 items-center justify-between border-b bg-card px-4 md:px-6">
-      <div className="md:hidden">
+      <div className="flex items-center gap-2 md:hidden">
+        <PaddleBoardIcon className="h-5 w-5 text-primary" />
         <span className="text-lg font-bold">{t('common.appName')}</span>
       </div>
       <div className="hidden md:block" />

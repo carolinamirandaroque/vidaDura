@@ -1,6 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent } from '@lifehub/ui';
 import type { Event } from '@lifehub/types';
+import { getDeadlineColor, isDeadline, isDeadlineOverdue } from '@lifehub/utils';
+import { getEventTypeColor } from '@/lib/event-types';
 import { eventsForDay } from '@/lib/calendar';
 import { useFormatters } from '@/hooks/useFormatters';
 import { MapPin } from 'lucide-react';
@@ -39,7 +41,9 @@ export function DayView({ currentDate, events, onEventClick }: DayViewProps) {
       ) : (
         <div className="space-y-2">
           {dayEvents.map((event) => {
-            const color = event.calendar?.color ?? '#6366f1';
+            const deadline = isDeadline(event);
+            const color = deadline ? getDeadlineColor(event) : getEventTypeColor(event.type);
+            const overdue = deadline && isDeadlineOverdue(event);
             return (
               <Card
                 key={event.id}
@@ -52,9 +56,13 @@ export function DayView({ currentDate, events, onEventClick }: DayViewProps) {
                     <div>
                       <h3 className="font-medium">{event.title}</h3>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        {event.allDay
-                          ? t('calendar.allDay')
-                          : `${formatTime(event.startDate)} – ${formatTime(event.endDate)}`}
+                        {deadline
+                          ? overdue
+                            ? t('eventHub.overdue')
+                            : t('eventHub.dueBy')
+                          : event.allDay
+                            ? t('calendar.allDay')
+                            : `${formatTime(event.startDate)} – ${formatTime(event.endDate)}`}
                       </p>
                       {event.location && (
                         <p className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
@@ -67,7 +75,7 @@ export function DayView({ currentDate, events, onEventClick }: DayViewProps) {
                       className="shrink-0 rounded-md px-2 py-0.5 text-xs font-medium"
                       style={{ backgroundColor: `${color}20`, color }}
                     >
-                      {event.calendar?.name}
+                      {deadline ? t('eventHub.deadline') : t(`eventHub.types.${event.type}`)}
                     </span>
                   </div>
                 </CardContent>

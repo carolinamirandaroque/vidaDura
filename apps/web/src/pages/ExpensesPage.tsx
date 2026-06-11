@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Plus, ArrowRight } from 'lucide-react';
+import { Plus, CheckCircle2 } from 'lucide-react';
 import {
   Button,
   Card,
@@ -37,6 +37,8 @@ export function ExpensesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [settlingShareId, setSettlingShareId] = useState<string | null>(null);
+  const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null);
+  const [settlingContactId, setSettlingContactId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: expenses, isLoading } = useQuery({
@@ -45,22 +47,47 @@ export function ExpensesPage() {
     enabled: !!userId,
   });
 
-  const { data: debts } = useQuery({
-    queryKey: ['debts', userId],
-    queryFn: () => api.getDebts(),
+  const { data: balances, isLoading: loadingBalances } = useQuery({
+    queryKey: ['balances', userId],
+    queryFn: () => api.getBalances(),
     enabled: !!userId,
   });
+
+  const invalidateExpenseQueries = () => {
+    queryClient.invalidateQueries({ queryKey: ['expenses'] });
+    queryClient.invalidateQueries({ queryKey: ['debts'] });
+    queryClient.invalidateQueries({ queryKey: ['balances'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    queryClient.invalidateQueries({ queryKey: ['events'] });
+  };
 
   const createMutation = useMutation({
     mutationFn: api.createExpense,
     onSuccess: () => {
       setCreateError(null);
-      queryClient.invalidateQueries({ queryKey: ['expenses'] });
-      queryClient.invalidateQueries({ queryKey: ['debts'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      invalidateExpenseQueries();
       setDialogOpen(false);
     },
     onError: (err: Error) => setCreateError(err.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: api.deleteExpense,
+    onMutate: (id) => setDeletingExpenseId(id),
+    onSettled: () => setDeletingExpenseId(null),
+    onSuccess: invalidateExpenseQueries,
+  });
+
+  const settleAllMutation = useMutation({
+    mutationFn: api.settleAllExpenses,
+    onSuccess: invalidateExpenseQueries,
+  });
+
+  const settleWithContactMutation = useMutation({
+    mutationFn: api.settleExpensesWithContact,
+    onMutate: (contactId) => setSettlingContactId(contactId),
+    onSettled: () => setSettlingContactId(null),
+    onSuccess: invalidateExpenseQueries,
   });
 
   const settleShareMutation = useMutation({
@@ -68,12 +95,7 @@ export function ExpensesPage() {
       api.settleExpenseShare(expenseId, shareId, true),
     onMutate: ({ shareId }) => setSettlingShareId(shareId),
     onSettled: () => setSettlingShareId(null),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['expenses'] });
-      queryClient.invalidateQueries({ queryKey: ['debts'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['events'] });
-    },
+    onSuccess: invalidateExpenseQueries,
   });
 
   if (isLoading) return <LoadingSpinner />;
@@ -143,6 +165,8 @@ export function ExpensesPage() {
                       onSettleShare={(expenseId, shareId) =>
                         settleShareMutation.mutate({ expenseId, shareId })
                       }
+                      onDelete={(id) => deleteMutation.mutate(id)}
+                      deleting={deleteMutation.isPending && deletingExpenseId === expense.id}
                       settlingShareId={
                         settleShareMutation.isPending ? settlingShareId : null
                       }
@@ -155,52 +179,85 @@ export function ExpensesPage() {
         </TabsContent>
 
         <TabsContent value="balances" className="mt-4">
-          {!debts?.length ? (
+          {loadingBalances ? (
+            <LoadingSpinner />
+          ) : !balances?.length ? (
             <p className="text-center text-muted-foreground">{t('expenses.allBalanced')}</p>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">{t('expenses.debtsSummary')}</p>
-              {debts.map((debt) => {
-                const youOwe = debt.from.id === userId;
-                const owesYou = debt.to.id === userId;
-                const debtor = youOwe ? t('expenses.you') : debt.from.name;
-                const creditor = owesYou ? t('expenses.you') : debt.to.name;
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-muted-foreground">{t('expenses.balancesAutoHint')}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={settleAllMutation.isPending}
+                  onClick={() => {
+                    if (window.confirm(t('expenses.settleAllConfirm'))) {
+                      settleAllMutation.mutate();
+                    }
+                  }}
+                >
+                  <CheckCircle2 className="mr-1.5 h-4 w-4" />
+                  {t('expenses.settleAll')}
+                </Button>
+              </div>
+              {balances.map((balance) => {
+                const owesYou = balance.amount < 0;
+                const amount = Math.abs(balance.amount);
+                const isSettling =
+                  settleWithContactMutation.isPending && settlingContactId === balance.userId;
 
                 return (
-                  <Card key={`${debt.from.id}-${debt.to.id}-${debt.amount}`}>
+                  <Card key={balance.userId}>
                     <CardContent className="flex items-center gap-3 p-4">
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage src={debt.from.avatar ?? undefined} />
-                        <AvatarFallback>{getInitials(debt.from.name)}</AvatarFallback>
+                      <Avatar className="h-9 w-9">
+                        <AvatarImage src={balance.user.avatar ?? undefined} />
+                        <AvatarFallback>{getInitials(balance.user.name)}</AvatarFallback>
                       </Avatar>
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1.5 text-sm">
-                          <span className={`font-medium ${youOwe ? 'text-destructive' : ''}`}>
-                            {debtor}
-                          </span>
-                          <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className={`font-medium ${owesYou ? 'text-emerald-600 dark:text-emerald-400' : ''}`}>
-                            {creditor}
-                          </span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {youOwe
-                            ? t('expenses.youOweTo', { name: debt.to.name })
-                            : owesYou
-                              ? t('expenses.owesYou', { name: debt.from.name })
-                              : t('expenses.debtBetween', {
-                                  from: debt.from.name,
-                                  to: debt.to.name,
-                                })}
+                        <p className="font-medium">{balance.user.name}</p>
+                        <p
+                          className={
+                            owesYou
+                              ? 'text-sm text-emerald-600 dark:text-emerald-400'
+                              : 'text-sm text-destructive'
+                          }
+                        >
+                          {owesYou ? t('expenses.balanceOwesYou') : t('expenses.balanceYouOwe')}
                         </p>
                       </div>
-                      <Avatar className="h-8 w-8">
-                        <AvatarImage src={debt.to.avatar ?? undefined} />
-                        <AvatarFallback>{getInitials(debt.to.name)}</AvatarFallback>
-                      </Avatar>
-                      <span className="font-semibold text-destructive">
-                        {formatCurrency(debt.amount, debt.currency)}
-                      </span>
+                      <div className="flex shrink-0 flex-col items-end gap-2">
+                        <span
+                          className={`text-lg font-semibold tabular-nums ${
+                            owesYou
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-destructive'
+                          }`}
+                        >
+                          {owesYou ? '+' : '-'}
+                          {formatCurrency(amount)}
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          disabled={isSettling || settleAllMutation.isPending}
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                t('expenses.settleWithConfirm', { name: balance.user.name }),
+                              )
+                            ) {
+                              settleWithContactMutation.mutate(balance.userId);
+                            }
+                          }}
+                        >
+                          <CheckCircle2 className="mr-1 h-3 w-3" />
+                          {t('expenses.settleWith')}
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 );

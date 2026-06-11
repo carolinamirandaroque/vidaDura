@@ -1,3 +1,4 @@
+import { RecurrenceType } from '@prisma/client';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
@@ -62,14 +63,29 @@ export class EventsRepository {
     return this.prisma.event.findMany({
       where: {
         dismissals: { none: { userId } },
-        OR: [
-          { createdById: userId },
-          { participants: { some: { userId } } },
-          { calendar: { members: { some: { userId } } } },
+        AND: [
+          {
+            OR: [
+              { createdById: userId },
+              { participants: { some: { userId } } },
+              { calendar: { members: { some: { userId } } } },
+            ],
+          },
+          ...(start && end
+            ? [
+                {
+                  OR: [
+                    { startDate: { lte: end }, endDate: { gte: start } },
+                    {
+                      recurrence: { not: RecurrenceType.none },
+                      startDate: { lte: end },
+                      OR: [{ recurrenceEnd: null }, { recurrenceEnd: { gte: start } }],
+                    },
+                  ],
+                },
+              ]
+            : []),
         ],
-        ...(start && end
-          ? { startDate: { lte: end }, endDate: { gte: start } }
-          : {}),
       },
       include: {
         participants: { include: { user: true } },
@@ -80,18 +96,21 @@ export class EventsRepository {
   }
 
   create(createdById: string, dto: CreateEventDto) {
+    const isDeadline = dto.kind === 'deadline';
     return this.prisma.event.create({
       data: {
         calendarId: dto.calendarId,
-        type: dto.type ?? 'general',
+        kind: dto.kind ?? 'appointment',
+        type: dto.type ?? (isDeadline ? 'other' : 'social'),
         title: dto.title,
         description: dto.description,
         location: dto.location,
         startDate: new Date(dto.startDate),
         endDate: new Date(dto.endDate),
-        allDay: dto.allDay ?? false,
+        allDay: isDeadline ? true : (dto.allDay ?? false),
         recurrence: dto.recurrence ?? 'none',
         recurrenceEnd: dto.recurrenceEnd ? new Date(dto.recurrenceEnd) : null,
+        deadlineStatus: isDeadline ? 'pending' : null,
         createdById,
         participants: dto.participantIds?.length
           ? {
@@ -120,6 +139,7 @@ export class EventsRepository {
       return tx.event.update({
         where: { id },
         data: {
+          kind: dto.kind,
           type: dto.type,
           title: dto.title,
           description: dto.description,
@@ -128,7 +148,21 @@ export class EventsRepository {
           endDate: dto.endDate ? new Date(dto.endDate) : undefined,
           allDay: dto.allDay,
           recurrence: dto.recurrence,
-          recurrenceEnd: dto.recurrenceEnd ? new Date(dto.recurrenceEnd) : undefined,
+          recurrenceEnd:
+            dto.recurrence === 'none'
+              ? null
+              : dto.recurrenceEnd === undefined
+                ? undefined
+                : dto.recurrenceEnd
+                  ? new Date(dto.recurrenceEnd)
+                  : null,
+          deadlineStatus: dto.deadlineStatus,
+          completedAt:
+            dto.completedAt === undefined
+              ? undefined
+              : dto.completedAt
+                ? new Date(dto.completedAt)
+                : null,
         },
         include: {
           participants: { include: { user: true } },

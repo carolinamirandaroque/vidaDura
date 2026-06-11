@@ -8,12 +8,19 @@ import {
   Wallet,
   ShoppingBag,
   Plus,
-  Cake,
-  Plane,
+  Briefcase,
+  Landmark,
   PartyPopper,
+  Trophy,
+  GraduationCap,
+  Cpu,
+  Heart,
+  Church,
   CalendarDays,
   Package,
   Trash2,
+  Bell,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   Dialog,
@@ -39,18 +46,24 @@ import { ExpenseSplitForm } from '@/components/expenses/ExpenseSplitForm';
 import { ExpenseCard } from '@/components/expenses/ExpenseCard';
 import { useFormatters } from '@/hooks/useFormatters';
 import { useAuthStore } from '@/stores/auth.store';
-import { getInitials } from '@lifehub/utils';
-import { resolveEventDates, toDatetimeLocalValue } from '@/lib/calendar';
+import { getDeadlineColor, getInitials, isDeadline, isDeadlineOverdue } from '@lifehub/utils';
+import { resolveDueDate, resolveEventDates, toDatetimeLocalValue } from '@/lib/calendar';
+import { getEventTypeColor } from '@/lib/event-types';
 import { ContactMultiSelect } from '@/components/shared/ContactMultiSelect';
-import type { HubEventType, EventItemType, Task, User, EventDetail } from '@lifehub/types';
+import { DatePickerField } from '@/components/shared/DatePickerField';
+import { DateTimePickerField } from '@/components/shared/DateTimePickerField';
+import type { HubEventType, EventItemType, RecurrenceType, Task, User, EventDetail } from '@lifehub/types';
 
 const typeIcons: Record<HubEventType, typeof CalendarDays> = {
-  general: CalendarDays,
-  birthday: Cake,
-  meeting: Users,
-  trip: Plane,
-  celebration: PartyPopper,
   social: Users,
+  corporate: Briefcase,
+  cultural: Landmark,
+  entertainment: PartyPopper,
+  sports: Trophy,
+  educational: GraduationCap,
+  technological: Cpu,
+  charitable: Heart,
+  religious: Church,
   other: CalendarDays,
 };
 
@@ -179,6 +192,9 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
   const [editTitle, setEditTitle] = useState('');
   const [editStart, setEditStart] = useState('');
   const [editEnd, setEditEnd] = useState('');
+  const [editRecurrence, setEditRecurrence] = useState<RecurrenceType>('none');
+  const [editRecurrenceEnd, setEditRecurrenceEnd] = useState('');
+  const [editDueDate, setEditDueDate] = useState('');
   const [detailsError, setDetailsError] = useState<string | null>(null);
 
   const { data: detail, isLoading } = useQuery({
@@ -211,9 +227,14 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
       setEditTitle(detail.title);
       setEditStart(toDatetimeLocalValue(detail.startDate));
       setEditEnd(toDatetimeLocalValue(detail.endDate));
+      setEditRecurrence(detail.recurrence);
+      setEditRecurrenceEnd(
+        detail.recurrenceEnd ? detail.recurrenceEnd.slice(0, 10) : '',
+      );
+      setEditDueDate(detail.endDate.slice(0, 10));
       setDetailsError(null);
     }
-  }, [detail?.id, detail?.title, detail?.startDate, detail?.endDate]);
+  }, [detail?.id, detail?.title, detail?.startDate, detail?.endDate, detail?.recurrence, detail?.recurrenceEnd]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['event-detail', eventId] });
@@ -224,6 +245,14 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
   };
 
   const [settlingShareId, setSettlingShareId] = useState<string | null>(null);
+  const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null);
+
+  const deleteExpenseMutation = useMutation({
+    mutationFn: api.deleteExpense,
+    onMutate: (id) => setDeletingExpenseId(id),
+    onSettled: () => setDeletingExpenseId(null),
+    onSuccess: invalidate,
+  });
 
   const settleShareMutation = useMutation({
     mutationFn: ({ expenseId, shareId }: { expenseId: string; shareId: string }) =>
@@ -288,12 +317,34 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
     onSuccess: invalidate,
   });
 
+  const completeDeadlineMutation = useMutation({
+    mutationFn: () => api.completeDeadline(eventId!),
+    onSuccess: () => {
+      invalidate();
+      onOpenChange(false);
+    },
+  });
+
   const updateDetailsMutation = useMutation({
     mutationFn: () => {
       const title = editTitle.trim();
       if (!title) throw new Error(t('eventHub.titleRequired'));
-      const { startDate, endDate } = resolveEventDates(editStart, editEnd);
-      return api.updateEvent(eventId!, { title, startDate, endDate });
+      const isDeadlineEvent = detail?.kind === 'deadline';
+      const dates = isDeadlineEvent
+        ? resolveDueDate(editDueDate)
+        : resolveEventDates(editStart, editEnd);
+      return api.updateEvent(eventId!, {
+        title,
+        startDate: dates.startDate,
+        endDate: dates.endDate,
+        recurrence: editRecurrence,
+        recurrenceEnd:
+          editRecurrence === 'none'
+            ? null
+            : editRecurrenceEnd.trim()
+              ? new Date(editRecurrenceEnd).toISOString()
+              : null,
+      });
     },
     onSuccess: () => {
       setDetailsError(null);
@@ -313,8 +364,14 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
 
   if (!eventId) return null;
 
-  const Icon = detail ? typeIcons[detail.type] : CalendarDays;
-  const color = detail?.calendar?.color ?? '#6366f1';
+  const isDeadlineEvent = detail ? isDeadline(detail) : false;
+  const Icon = detail ? (isDeadlineEvent ? Bell : typeIcons[detail.type]) : CalendarDays;
+  const color = detail
+    ? isDeadlineEvent
+      ? getDeadlineColor(detail)
+      : getEventTypeColor(detail.type)
+    : '#f97316';
+  const overdue = detail && isDeadlineOverdue(detail);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -333,18 +390,36 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
                 </div>
                 <div className="min-w-0 flex-1">
                   {isCreator ? (
-                    <DialogTitle className="text-left text-xl">{t('eventHub.editEvent')}</DialogTitle>
+                    <DialogTitle className="text-left text-xl">
+                      {isDeadlineEvent ? t('eventHub.editDeadline') : t('eventHub.editEvent')}
+                    </DialogTitle>
                   ) : (
                     <>
                       <DialogTitle className="text-xl">{detail.title}</DialogTitle>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
-                        <Badge style={{ backgroundColor: `${color}20`, color }}>
-                          {t(`eventHub.types.${detail.type}`)}
-                        </Badge>
+                        {isDeadlineEvent ? (
+                          <Badge style={{ backgroundColor: `${color}20`, color }}>
+                            {t('eventHub.deadline')}
+                          </Badge>
+                        ) : (
+                          <Badge style={{ backgroundColor: `${color}20`, color }}>
+                            {t(`eventHub.types.${detail.type}`)}
+                          </Badge>
+                        )}
+                        {overdue && (
+                          <Badge variant="destructive">{t('eventHub.overdue')}</Badge>
+                        )}
+                        {detail.recurrence !== 'none' && (
+                          <Badge variant="outline">
+                            {t(`eventHub.recurrence.${detail.recurrence}`)}
+                          </Badge>
+                        )}
                         <span className="text-sm text-muted-foreground">
-                          {detail.allDay
-                            ? `${formatDateTime(detail.startDate).split(',')[0]} · ${t('calendar.allDay')}`
-                            : `${formatDateTime(detail.startDate)} – ${formatTime(detail.endDate)}`}
+                          {isDeadlineEvent
+                            ? `${t('eventHub.dueBy')} ${formatDateTime(detail.endDate).split(',')[0]}`
+                            : detail.allDay
+                              ? `${formatDateTime(detail.startDate).split(',')[0]} · ${t('calendar.allDay')}`
+                              : `${formatDateTime(detail.startDate)} – ${formatTime(detail.endDate)}`}
                         </span>
                       </div>
                     </>
@@ -383,24 +458,50 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
                     placeholder={t('eventHub.titlePlaceholder')}
                   />
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                {isDeadlineEvent ? (
                   <div className="space-y-2">
-                    <Label>{t('common.start')}</Label>
-                    <Input
-                      type="datetime-local"
-                      value={editStart}
-                      onChange={(e) => setEditStart(e.target.value)}
-                    />
+                    <Label>{t('eventHub.dueDate')} *</Label>
+                    <DatePickerField value={editDueDate} onChange={setEditDueDate} />
                   </div>
-                  <div className="space-y-2">
-                    <Label>{t('common.end')}</Label>
-                    <Input
-                      type="datetime-local"
-                      value={editEnd}
-                      onChange={(e) => setEditEnd(e.target.value)}
-                    />
+                ) : (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label>{t('common.start')}</Label>
+                      <DateTimePickerField value={editStart} onChange={setEditStart} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t('common.end')}</Label>
+                      <DateTimePickerField value={editEnd} onChange={setEditEnd} />
+                    </div>
                   </div>
+                )}
+                <div className="space-y-2">
+                  <Label>{t('eventHub.recurrence.label')}</Label>
+                  <Select
+                    value={editRecurrence}
+                    onValueChange={(v) => setEditRecurrence(v as RecurrenceType)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(['none', 'daily', 'weekly', 'monthly', 'yearly'] as RecurrenceType[]).map(
+                        (value) => (
+                          <SelectItem key={value} value={value}>
+                            {t(`eventHub.recurrence.${value}`)}
+                          </SelectItem>
+                        ),
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
+                {editRecurrence !== 'none' && (
+                  <div className="space-y-2">
+                    <Label>{t('eventHub.recurrence.endLabel')}</Label>
+                    <DatePickerField value={editRecurrenceEnd} onChange={setEditRecurrenceEnd} />
+                    <p className="text-xs text-muted-foreground">{t('eventHub.recurrence.hint')}</p>
+                  </div>
+                )}
                 {detailsError && <p className="text-sm text-destructive">{detailsError}</p>}
                 <Button
                   size="sm"
@@ -410,7 +511,30 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
                 >
                   {t('eventHub.saveDetails')}
                 </Button>
+                {isDeadlineEvent && detail.deadlineStatus !== 'done' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    disabled={completeDeadlineMutation.isPending}
+                    onClick={() => completeDeadlineMutation.mutate()}
+                  >
+                    <CheckCircle2 className="mr-2 h-4 w-4" />
+                    {t('eventHub.markDeadlineDone')}
+                  </Button>
+                )}
               </div>
+            )}
+
+            {!isCreator && isDeadlineEvent && detail.deadlineStatus !== 'done' && (
+              <Button
+                className="w-full"
+                disabled={completeDeadlineMutation.isPending}
+                onClick={() => completeDeadlineMutation.mutate()}
+              >
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+                {t('eventHub.markDeadlineDone')}
+              </Button>
             )}
 
             {(detail.description || detail.location) && (
@@ -425,7 +549,7 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
               </div>
             )}
 
-            {isCreator && (
+            {!isDeadlineEvent && isCreator && (
               <div className="space-y-3 rounded-lg border p-3">
                 <div className="flex items-center gap-2">
                   <Users className="h-4 w-4 text-muted-foreground" />
@@ -448,7 +572,7 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
               </div>
             )}
 
-            {!isCreator && detail.participants && detail.participants.length > 0 && (
+            {!isDeadlineEvent && !isCreator && detail.participants && detail.participants.length > 0 && (
               <div className="flex items-center gap-2">
                 <Users className="h-4 w-4 text-muted-foreground" />
                 <div className="flex -space-x-2">
@@ -467,7 +591,7 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
               </div>
             )}
 
-            {myItems.length > 0 && (
+            {!isDeadlineEvent && myItems.length > 0 && (
               <div className="rounded-lg border-2 border-primary/25 bg-primary/5 p-3">
                 <div className="mb-2 flex items-center gap-2">
                   <Package className="h-4 w-4 text-primary" />
@@ -504,7 +628,8 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
               </div>
             )}
 
-            {/* Expenses — first */}
+            {!isDeadlineEvent && (
+            <>
             <section className="space-y-2">
               <SectionHeader
                 icon={Wallet}
@@ -525,6 +650,10 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
                       compact
                       onSettleShare={(expenseId, shareId) =>
                         settleShareMutation.mutate({ expenseId, shareId })
+                      }
+                      onDelete={(id) => deleteExpenseMutation.mutate(id)}
+                      deleting={
+                        deleteExpenseMutation.isPending && deletingExpenseId === expense.id
                       }
                       settlingShareId={
                         settleShareMutation.isPending ? settlingShareId : null
@@ -688,6 +817,8 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
                 </Button>
               </div>
             </section>
+            </>
+            )}
           </div>
         )}
       </DialogContent>

@@ -2,6 +2,7 @@ import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestj
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
+import { CreateDeadlineDto } from './dto/create-deadline.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { CreateEventTaskDto } from './dto/create-event-task.dto';
 import { CreateEventItemDto } from './dto/create-event-item.dto';
@@ -94,10 +95,27 @@ export class EventsController {
     return this.eventsService.removeItem(userId, id, itemId);
   }
 
+  @Post('deadline')
+  @ApiOperation({ summary: 'Create deadline reminder' })
+  createDeadline(@CurrentUser('sub') userId: string, @Body() dto: CreateDeadlineDto) {
+    return this.eventsService.create(userId, {
+      ...dto,
+      kind: 'deadline',
+      type: 'other',
+      allDay: true,
+    });
+  }
+
   @Post()
   @ApiOperation({ summary: 'Create event' })
   create(@CurrentUser('sub') userId: string, @Body() dto: CreateEventDto) {
     return this.eventsService.create(userId, dto);
+  }
+
+  @Patch(':id/complete-deadline')
+  @ApiOperation({ summary: 'Mark deadline as done (advances if recurring)' })
+  completeDeadline(@CurrentUser('sub') userId: string, @Param('id') id: string) {
+    return this.eventsService.completeDeadline(userId, id);
   }
 
   @Patch(':id')

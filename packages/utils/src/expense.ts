@@ -66,11 +66,20 @@ export function getExpenseSettlementStatus(expense: Expense): 'pending' | 'parti
   return 'partial';
 }
 
-export function calculateBalances(
-  expenses: Expense[],
-  users: User[],
-  currentUserId: string,
-): Balance[] {
+export function extractExpenseUsers(expenses: Expense[]): User[] {
+  const map = new Map<string, User>();
+  for (const expense of expenses) {
+    if (expense.creator) map.set(expense.creator.id, expense.creator);
+    if (expense.paidBy) map.set(expense.paidBy.id, expense.paidBy);
+    expense.shares?.forEach((share) => {
+      if (share.user) map.set(share.user.id, share.user);
+    });
+  }
+  return Array.from(map.values());
+}
+
+export function calculateGlobalBalances(expenses: Expense[]): Balance[] {
+  const users = extractExpenseUsers(expenses);
   const balanceMap = new Map<string, number>();
 
   for (const user of users) {
@@ -91,13 +100,28 @@ export function calculateBalances(
   }
 
   return Array.from(balanceMap.entries())
-    .filter(([userId]) => userId !== currentUserId)
     .map(([userId, amount]) => ({
       userId,
       user: users.find((u) => u.id === userId)!,
       amount: Math.round(amount * 100) / 100,
     }))
     .filter((b) => b.user && Math.abs(b.amount) > 0.01);
+}
+
+/** Net balance per contact relative to the current user (negative = they owe you). */
+export function calculateBalances(
+  expenses: Expense[],
+  users: User[],
+  currentUserId: string,
+): Balance[] {
+  const contactIds = new Set(users.map((u) => u.id));
+
+  return calculateGlobalBalances(expenses)
+    .filter((b) => b.userId !== currentUserId && contactIds.has(b.userId))
+    .map((b) => ({
+      ...b,
+      user: users.find((u) => u.id === b.userId) ?? b.user,
+    }));
 }
 
 export function simplifyDebts(balances: Balance[], currency = 'EUR'): Debt[] {
@@ -137,27 +161,10 @@ export function validateShares(amount: number, shares: Pick<ExpenseShare, 'amoun
   return Math.abs(total - amount) < 0.01;
 }
 
-/** Aggregate pending per-share obligations into who-owes-whom debts */
-export function aggregateDebtsFromExpenses(expenses: Expense[]): Debt[] {
-  const debtMap = new Map<string, Debt>();
-
-  for (const expense of expenses) {
-    for (const obligation of getPendingObligations(expense)) {
-      const key = `${obligation.from.id}->${obligation.to.id}`;
-      const existing = debtMap.get(key);
-
-      if (existing) {
-        existing.amount = Math.round((existing.amount + obligation.amount) * 100) / 100;
-      } else {
-        debtMap.set(key, {
-          from: obligation.from,
-          to: obligation.to,
-          amount: obligation.amount,
-          currency: expense.currency,
-        });
-      }
-    }
-  }
-
-  return Array.from(debtMap.values()).filter((d) => d.amount > 0.01);
+/** Minimized who-should-pay-whom list after netting all pending expenses. */
+export function aggregateDebtsFromExpenses(expenses: Expense[], currency = 'EUR'): Debt[] {
+  const balances = calculateGlobalBalances(expenses);
+  if (!balances.length) return [];
+  const resolvedCurrency = expenses.find((e) => e.currency)?.currency ?? currency;
+  return simplifyDebts(balances, resolvedCurrency);
 }

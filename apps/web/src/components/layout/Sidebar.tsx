@@ -7,9 +7,9 @@ import {
   Wallet,
   Users,
   ShoppingCart,
-  Sparkles,
 } from 'lucide-react';
 import { cn } from '@lifehub/ui';
+import { PaddleBoardIcon } from '@/components/shared/PaddleBoardIcon';
 
 export function Sidebar() {
   const { t } = useTranslation();
@@ -26,7 +26,7 @@ export function Sidebar() {
   return (
     <aside className="hidden w-64 flex-col border-r bg-card md:flex">
       <div className="flex h-16 items-center gap-2 border-b px-6">
-        <Sparkles className="h-6 w-6 text-primary" />
+        <PaddleBoardIcon className="h-6 w-6 text-primary" />
         <span className="text-lg font-bold">{t('common.appName')}</span>
       </div>
       <nav className="flex-1 space-y-1 p-4">

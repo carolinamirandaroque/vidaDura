@@ -129,6 +129,18 @@ export function toDatetimeLocalValue(date: Date | string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+export function resolveDueDate(dueInput?: string): { startDate: string; endDate: string } {
+  const due = dueInput?.trim()
+    ? new Date(`${dueInput.trim()}T12:00:00`)
+    : new Date();
+  if (Number.isNaN(due.getTime())) {
+    throw new Error('Invalid due date');
+  }
+  const start = new Date(due.getFullYear(), due.getMonth(), due.getDate(), 0, 0, 0, 0);
+  const end = new Date(due.getFullYear(), due.getMonth(), due.getDate(), 23, 59, 59, 999);
+  return { startDate: start.toISOString(), endDate: end.toISOString() };
+}
+
 export function resolveEventDates(
   startInput?: string,
   endInput?: string,

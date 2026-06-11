@@ -55,13 +55,26 @@ enum NotificationType {
 }
 
 enum HubEventType {
-  general
-  birthday
-  meeting
-  trip
-  celebration
   social
+  corporate
+  cultural
+  entertainment
+  sports
+  educational
+  technological
+  charitable
+  religious
   other
+}
+
+enum EventKind {
+  appointment
+  deadline
+}
+
+enum DeadlineStatus {
+  pending
+  done
 }
 
 enum EventItemType {
@@ -230,20 +243,23 @@ model CalendarMember {
 }
 
 model Event {
-  id             String         @id @default(cuid())
+  id             String          @id @default(cuid())
   calendarId     String
-  type           HubEventType   @default(general)
+  kind           EventKind       @default(appointment)
+  type           HubEventType    @default(social)
   title          String
   description    String?
   location       String?
   startDate      DateTime
   endDate        DateTime
-  allDay         Boolean        @default(false)
-  recurrence     RecurrenceType @default(none)
+  allDay         Boolean         @default(false)
+  recurrence     RecurrenceType  @default(none)
   recurrenceEnd  DateTime?
+  deadlineStatus DeadlineStatus?
+  completedAt    DateTime?
   createdById    String
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
   calendar     Calendar           @relation(fields: [calendarId], references: [id], onDelete: Cascade)
   createdBy    User               @relation("EventCreator", fields: [createdById], references: [id], onDelete: Cascade)

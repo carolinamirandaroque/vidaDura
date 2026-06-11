@@ -3,17 +3,26 @@ import {
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import type { EventKind } from '@lifehub/types';
 import { HubEventType, RecurrenceType } from '@prisma/client';
+
+const EVENT_KINDS = ['appointment', 'deadline'] as const satisfies readonly EventKind[];
 
 export class CreateEventDto {
   @ApiProperty()
   @IsString()
   calendarId!: string;
+
+  @ApiPropertyOptional({ enum: EVENT_KINDS })
+  @IsOptional()
+  @IsIn(EVENT_KINDS)
+  kind?: EventKind;
 
   @ApiPropertyOptional({ enum: HubEventType })
   @IsOptional()

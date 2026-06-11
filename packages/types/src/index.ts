@@ -97,18 +97,24 @@ export type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 export type EventView = 'day' | 'week' | 'month' | 'agenda';
 export type ParticipantStatus = 'pending' | 'accepted' | 'declined';
 export type HubEventType =
-  | 'general'
-  | 'birthday'
-  | 'meeting'
-  | 'trip'
-  | 'celebration'
   | 'social'
+  | 'corporate'
+  | 'cultural'
+  | 'entertainment'
+  | 'sports'
+  | 'educational'
+  | 'technological'
+  | 'charitable'
+  | 'religious'
   | 'other';
 export type EventItemType = 'buy' | 'bring' | 'reminder';
+export type EventKind = 'appointment' | 'deadline';
+export type DeadlineStatus = 'pending' | 'done';
 
 export interface Event {
   id: string;
   calendarId: string;
+  kind: EventKind;
   type: HubEventType;
   title: string;
   description: string | null;
@@ -118,6 +124,8 @@ export interface Event {
   allDay: boolean;
   recurrence: RecurrenceType;
   recurrenceEnd: string | null;
+  deadlineStatus?: DeadlineStatus | null;
+  completedAt?: string | null;
   createdById: string;
   createdBy?: User;
   createdAt: string;
@@ -164,8 +172,18 @@ export interface EventParticipant {
   user?: User;
 }
 
+export interface CreateDeadlineDto {
+  calendarId: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  recurrence?: RecurrenceType;
+  recurrenceEnd?: string;
+}
+
 export interface CreateEventDto {
   calendarId: string;
+  kind?: EventKind;
   type?: HubEventType;
   title: string;
   description?: string;
@@ -179,6 +197,7 @@ export interface CreateEventDto {
 }
 
 export interface UpdateEventDto {
+  kind?: EventKind;
   type?: HubEventType;
   title?: string;
   description?: string;
@@ -187,7 +206,9 @@ export interface UpdateEventDto {
   endDate?: string;
   allDay?: boolean;
   recurrence?: RecurrenceType;
-  recurrenceEnd?: string;
+  recurrenceEnd?: string | null;
+  deadlineStatus?: DeadlineStatus;
+  completedAt?: string | null;
   participantIds?: string[];
 }
 

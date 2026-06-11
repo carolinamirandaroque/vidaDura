@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, ChevronLeft, ChevronRight, Bell } from 'lucide-react';
 import {
   Button,
   Tabs,
@@ -12,14 +12,21 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   Input,
   Label,
 } from '@lifehub/ui';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
 import { ContactMultiSelect } from '@/components/shared/ContactMultiSelect';
-import { getViewRange, navigateDate, formatViewTitle, resolveEventDates } from '@/lib/calendar';
+import { DatePickerField } from '@/components/shared/DatePickerField';
+import { DateTimePickerField } from '@/components/shared/DateTimePickerField';
+import {
+  getViewRange,
+  navigateDate,
+  formatViewTitle,
+  resolveDueDate,
+  resolveEventDates,
+} from '@/lib/calendar';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { MonthGrid } from '@/components/calendar/MonthGrid';
 import { WeekGrid } from '@/components/calendar/WeekGrid';
@@ -33,7 +40,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@lifehub/ui';
-import type { Event, EventView, HubEventType } from '@lifehub/types';
+import { expandRecurringEvents, getEventSeriesId } from '@lifehub/utils';
+import type { Event, EventView, HubEventType, RecurrenceType } from '@lifehub/types';
+import { HUB_EVENT_TYPES, getEventTypeColor } from '@/lib/event-types';
 
 export function CalendarPage() {
   const { t, i18n } = useTranslation();
@@ -42,6 +51,7 @@ export function CalendarPage() {
   const [view, setView] = useState<EventView>('month');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [createKind, setCreateKind] = useState<'appointment' | 'deadline'>('appointment');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -50,8 +60,11 @@ export function CalendarPage() {
     startDate: '',
     endDate: '',
     calendarId: '',
-    type: 'general' as HubEventType,
+    type: 'social' as HubEventType,
     participantIds: [] as string[],
+    recurrence: 'none' as RecurrenceType,
+    recurrenceEnd: '',
+    dueDate: '',
   });
   const queryClient = useQueryClient();
 
@@ -62,13 +75,50 @@ export function CalendarPage() {
     queryFn: () => api.getEvents(start.toISOString(), end.toISOString()),
   });
 
+  const displayEvents = useMemo(
+    () => expandRecurringEvents(events, start, end),
+    [events, start, end],
+  );
+
   const { data: calendars, isLoading: loadingCalendars } = useQuery({
     queryKey: ['calendars'],
     queryFn: () => api.getCalendars(),
   });
 
   const createMutation = useMutation({
-    mutationFn: api.createEvent,
+    mutationFn: ({
+      createKind: kind,
+      ...dto
+    }: {
+      createKind: 'appointment' | 'deadline';
+      title: string;
+      calendarId: string;
+      startDate: string;
+      endDate: string;
+      type?: HubEventType;
+      recurrence?: RecurrenceType;
+      recurrenceEnd?: string;
+      participantIds?: string[];
+    }) =>
+      kind === 'deadline'
+        ? api.createDeadline({
+            calendarId: dto.calendarId,
+            title: dto.title,
+            startDate: dto.startDate,
+            endDate: dto.endDate,
+            recurrence: dto.recurrence,
+            recurrenceEnd: dto.recurrenceEnd,
+          })
+        : api.createEvent({
+            title: dto.title,
+            calendarId: dto.calendarId,
+            startDate: dto.startDate,
+            endDate: dto.endDate,
+            type: dto.type,
+            recurrence: dto.recurrence,
+            recurrenceEnd: dto.recurrenceEnd,
+            participantIds: dto.participantIds,
+          }),
     onSuccess: () => {
       setCreateError(null);
       queryClient.invalidateQueries({ queryKey: ['events'] });
@@ -79,9 +129,13 @@ export function CalendarPage() {
         startDate: '',
         endDate: '',
         calendarId: '',
-        type: 'general',
+        type: 'social',
         participantIds: [],
+        recurrence: 'none',
+        recurrenceEnd: '',
+        dueDate: '',
       });
+      setCreateKind('appointment');
     },
     onError: (err: Error) => setCreateError(err.message),
   });
@@ -96,7 +150,7 @@ export function CalendarPage() {
   };
 
   const handleEventClick = (event: Event) => {
-    setSelectedEventId(event.id);
+    setSelectedEventId(getEventSeriesId(event.id));
     setDetailOpen(true);
   };
 
@@ -119,15 +173,23 @@ export function CalendarPage() {
           <Button variant="outline" size="icon" onClick={() => navigate(1)}>
             <ChevronRight className="h-4 w-4" />
           </Button>
+          <Button onClick={() => { setCreateKind('appointment'); setDialogOpen(true); }}>
+            <Plus className="mr-2 h-4 w-4" /> {t('calendar.addEvent')}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => { setCreateKind('deadline'); setDialogOpen(true); }}
+          >
+            <Bell className="mr-2 h-4 w-4" /> {t('calendar.addDeadline')}
+          </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="mr-2 h-4 w-4" /> {t('calendar.addEvent')}
-              </Button>
-            </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>{t('calendar.newEvent')}</DialogTitle>
+                <DialogTitle>
+                  {createKind === 'deadline'
+                    ? t('calendar.newDeadline')
+                    : t('calendar.newEvent')}
+                </DialogTitle>
               </DialogHeader>
               <form
                 className="space-y-4"
@@ -143,78 +205,142 @@ export function CalendarPage() {
                     setCreateError(t('calendar.noCalendar'));
                     return;
                   }
-                  const { startDate, endDate } = resolveEventDates(
-                    newEvent.startDate,
-                    newEvent.endDate,
-                  );
-                  createMutation.mutate({
-                    title,
-                    type: newEvent.type,
-                    calendarId,
-                    startDate,
-                    endDate,
-                    participantIds:
-                      newEvent.participantIds.length > 0 ? newEvent.participantIds : undefined,
-                  });
+                  try {
+                    const dates =
+                      createKind === 'deadline'
+                        ? resolveDueDate(newEvent.dueDate)
+                        : resolveEventDates(newEvent.startDate, newEvent.endDate);
+                    createMutation.mutate({
+                      createKind,
+                      title,
+                      type: newEvent.type,
+                      calendarId,
+                      startDate: dates.startDate,
+                      endDate: dates.endDate,
+                      recurrence: newEvent.recurrence,
+                      recurrenceEnd: newEvent.recurrenceEnd.trim()
+                        ? new Date(newEvent.recurrenceEnd).toISOString()
+                        : undefined,
+                      participantIds:
+                        createKind === 'appointment' && newEvent.participantIds.length > 0
+                          ? newEvent.participantIds
+                          : undefined,
+                    });
+                  } catch {
+                    setCreateError(t('eventHub.deadlineDateRequired'));
+                  }
                 }}
               >
+                {createKind === 'appointment' && (
+                  <div className="space-y-2">
+                    <Label>{t('eventHub.type')}</Label>
+                    <Select
+                      value={newEvent.type}
+                      onValueChange={(v) => setNewEvent({ ...newEvent, type: v as HubEventType })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {HUB_EVENT_TYPES.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            <span className="flex items-center gap-2">
+                              <span
+                                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                style={{ backgroundColor: getEventTypeColor(type) }}
+                              />
+                              {t(`eventHub.types.${type}`)}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="space-y-2">
-                  <Label>{t('eventHub.type')}</Label>
+                  <Label>{t('common.title')} *</Label>
+                  <Input
+                    value={newEvent.title}
+                    onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+                    placeholder={
+                      createKind === 'deadline'
+                        ? t('eventHub.deadlinePlaceholder')
+                        : t('eventHub.titlePlaceholder')
+                    }
+                    required
+                  />
+                </div>
+                {createKind === 'deadline' ? (
+                  <div className="space-y-2">
+                    <Label>{t('eventHub.dueDate')} *</Label>
+                    <DatePickerField
+                      value={newEvent.dueDate}
+                      onChange={(dueDate) => setNewEvent({ ...newEvent, dueDate })}
+                    />
+                    <p className="text-xs text-muted-foreground">{t('eventHub.deadlineHint')}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label>{t('common.start')}</Label>
+                      <DateTimePickerField
+                        value={newEvent.startDate}
+                        onChange={(startDate) => setNewEvent({ ...newEvent, startDate })}
+                      />
+                      <p className="text-xs text-muted-foreground">{t('eventHub.datesOptionalHint')}</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t('common.end')}</Label>
+                      <DateTimePickerField
+                        value={newEvent.endDate}
+                        onChange={(endDate) => setNewEvent({ ...newEvent, endDate })}
+                      />
+                    </div>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>{t('eventHub.recurrence.label')}</Label>
                   <Select
-                    value={newEvent.type}
-                    onValueChange={(v) => setNewEvent({ ...newEvent, type: v as HubEventType })}
+                    value={newEvent.recurrence}
+                    onValueChange={(v) =>
+                      setNewEvent({ ...newEvent, recurrence: v as RecurrenceType })
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {(['general', 'birthday', 'meeting', 'trip', 'celebration', 'social', 'other'] as HubEventType[]).map(
-                        (type) => (
-                          <SelectItem key={type} value={type}>
-                            {t(`eventHub.types.${type}`)}
+                      {(['none', 'daily', 'weekly', 'monthly', 'yearly'] as RecurrenceType[]).map(
+                        (value) => (
+                          <SelectItem key={value} value={value}>
+                            {t(`eventHub.recurrence.${value}`)}
                           </SelectItem>
                         ),
                       )}
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label>{t('common.title')} *</Label>
-                  <Input
-                    value={newEvent.title}
-                    onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
-                    placeholder={t('eventHub.titlePlaceholder')}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>{t('common.start')}</Label>
-                  <Input
-                    type="datetime-local"
-                    value={newEvent.startDate}
-                    onChange={(e) => setNewEvent({ ...newEvent, startDate: e.target.value })}
-                  />
-                  <p className="text-xs text-muted-foreground">{t('eventHub.datesOptionalHint')}</p>
-                </div>
-                <div className="space-y-2">
-                  <Label>{t('common.end')}</Label>
-                  <Input
-                    type="datetime-local"
-                    value={newEvent.endDate}
-                    onChange={(e) => setNewEvent({ ...newEvent, endDate: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>{t('eventHub.inviteContacts')}</Label>
-                  <ContactMultiSelect
-                    currentUserId={currentUser?.id}
-                    selectedIds={newEvent.participantIds}
-                    onChange={(participantIds) => setNewEvent({ ...newEvent, participantIds })}
-                  />
-                </div>
-                {createError && (
-                  <p className="text-sm text-destructive">{createError}</p>
+                {newEvent.recurrence !== 'none' && (
+                  <div className="space-y-2">
+                    <Label>{t('eventHub.recurrence.endLabel')}</Label>
+                    <DatePickerField
+                      value={newEvent.recurrenceEnd}
+                      onChange={(recurrenceEnd) => setNewEvent({ ...newEvent, recurrenceEnd })}
+                    />
+                    <p className="text-xs text-muted-foreground">{t('eventHub.recurrence.hint')}</p>
+                  </div>
                 )}
+                {createKind === 'appointment' && (
+                  <div className="space-y-2">
+                    <Label>{t('eventHub.inviteContacts')}</Label>
+                    <ContactMultiSelect
+                      currentUserId={currentUser?.id}
+                      selectedIds={newEvent.participantIds}
+                      onChange={(participantIds) => setNewEvent({ ...newEvent, participantIds })}
+                    />
+                  </div>
+                )}
+                {createError && <p className="text-sm text-destructive">{createError}</p>}
                 <Button
                   type="submit"
                   className="w-full"
@@ -239,7 +365,7 @@ export function CalendarPage() {
         <TabsContent value="month" className="mt-4">
           <MonthGrid
             currentDate={currentDate}
-            events={events}
+            events={displayEvents}
             onDayClick={handleDayClick}
             onEventClick={handleEventClick}
           />
@@ -248,18 +374,18 @@ export function CalendarPage() {
         <TabsContent value="week" className="mt-4">
           <WeekGrid
             currentDate={currentDate}
-            events={events}
+            events={displayEvents}
             onDayClick={handleDayClick}
             onEventClick={handleEventClick}
           />
         </TabsContent>
 
         <TabsContent value="day" className="mt-4">
-          <DayView currentDate={currentDate} events={events} onEventClick={handleEventClick} />
+          <DayView currentDate={currentDate} events={displayEvents} onEventClick={handleEventClick} />
         </TabsContent>
 
         <TabsContent value="agenda" className="mt-4">
-          <AgendaView currentDate={currentDate} events={events} onEventClick={handleEventClick} />
+          <AgendaView currentDate={currentDate} events={displayEvents} onEventClick={handleEventClick} />
         </TabsContent>
       </Tabs>
 

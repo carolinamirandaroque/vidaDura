@@ -1,9 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { cn, Card, CardContent } from '@lifehub/ui';
-import { addDays, isToday } from '@lifehub/utils';
+import { addDays, getDeadlineColor, isDeadline, isDeadlineOverdue, isToday } from '@lifehub/utils';
 import { eventsForDay } from '@/lib/calendar';
 import { useFormatters } from '@/hooks/useFormatters';
 import type { Event } from '@lifehub/types';
+import { getEventTypeColor } from '@/lib/event-types';
 
 interface AgendaViewProps {
   currentDate: Date;
@@ -47,7 +48,9 @@ export function AgendaView({ currentDate, events, onEventClick }: AgendaViewProp
           </h3>
           <div className="space-y-2">
             {dayEvents.map((event) => {
-              const color = event.calendar?.color ?? '#6366f1';
+              const deadline = isDeadline(event);
+              const color = deadline ? getDeadlineColor(event) : getEventTypeColor(event.type);
+              const overdue = deadline && isDeadlineOverdue(event);
               return (
                 <Card
                   key={event.id}
@@ -62,16 +65,20 @@ export function AgendaView({ currentDate, events, onEventClick }: AgendaViewProp
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{event.title}</p>
                       <p className="text-sm text-muted-foreground">
-                        {event.allDay
-                          ? t('calendar.allDay')
-                          : `${formatTime(event.startDate)} – ${formatTime(event.endDate)}`}
+                        {deadline
+                          ? overdue
+                            ? t('eventHub.overdue')
+                            : t('eventHub.dueBy')
+                          : event.allDay
+                            ? t('calendar.allDay')
+                            : `${formatTime(event.startDate)} – ${formatTime(event.endDate)}`}
                       </p>
                     </div>
                     <span
                       className="hidden shrink-0 rounded-md px-2 py-0.5 text-xs font-medium sm:inline"
                       style={{ backgroundColor: `${color}20`, color }}
                     >
-                      {event.calendar?.name}
+                      {deadline ? t('eventHub.deadline') : t(`eventHub.types.${event.type}`)}
                     </span>
                   </CardContent>
                 </Card>

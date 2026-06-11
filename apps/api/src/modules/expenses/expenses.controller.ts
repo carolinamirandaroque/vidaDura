@@ -30,6 +30,21 @@ export class ExpensesController {
     return this.expensesService.getDebts(userId);
   }
 
+  @Post('settle-all')
+  @ApiOperation({ summary: 'Settle all pending shares the user can settle' })
+  settleAll(@CurrentUser('sub') userId: string) {
+    return this.expensesService.settleAll(userId);
+  }
+
+  @Post('settle-with/:contactId')
+  @ApiOperation({ summary: 'Settle all pending shares with a contact' })
+  settleAllWithContact(
+    @CurrentUser('sub') userId: string,
+    @Param('contactId') contactId: string,
+  ) {
+    return this.expensesService.settleAllWithContact(userId, contactId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get expense by ID' })
   findOne(@CurrentUser('sub') userId: string, @Param('id') id: string) {

@@ -16,6 +16,7 @@ import type {
   DashboardData,
   CreateCalendarDto,
   CreateEventDto,
+  CreateDeadlineDto,
   UpdateEventDto,
   CreateTaskDto,
   CreateExpenseDto,
@@ -217,8 +218,16 @@ class ApiClient {
     return this.request<Event>('/events', { method: 'POST', body: JSON.stringify(dto) });
   };
 
+  createDeadline = (dto: CreateDeadlineDto) => {
+    return this.request<Event>('/events/deadline', { method: 'POST', body: JSON.stringify(dto) });
+  };
+
   updateEvent = (id: string, dto: UpdateEventDto) => {
     return this.request<Event>(`/events/${id}`, { method: 'PATCH', body: JSON.stringify(dto) });
+  };
+
+  completeDeadline = (id: string) => {
+    return this.request<Event>(`/events/${id}/complete-deadline`, { method: 'PATCH' });
   };
 
   deleteEvent = (id: string) => {
@@ -313,8 +322,22 @@ class ApiClient {
     });
   };
 
+  deleteExpense = (id: string) => {
+    return this.request<void>(`/expenses/${id}`, { method: 'DELETE' });
+  };
+
   getBalances = () => {
     return this.request<Balance[]>('/expenses/balances');
+  };
+
+  settleAllExpenses = () => {
+    return this.request<{ settled: number }>('/expenses/settle-all', { method: 'POST' });
+  };
+
+  settleExpensesWithContact = (contactId: string) => {
+    return this.request<{ settled: number }>(`/expenses/settle-with/${contactId}`, {
+      method: 'POST',
+    });
   };
 
   getDebts = () => {

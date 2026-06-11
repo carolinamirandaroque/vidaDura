@@ -55,9 +55,13 @@ export function ExpenseSplitForm({
     return Array.from(map.values());
   }, [currentUser, extraParticipants, contacts]);
 
+  const participantKey = participants.map((p) => p.id).join(',');
+
   useEffect(() => {
-    setSelectedIds(participants.map((p) => p.id));
-  }, [participants]);
+    const ids = participants.map((p) => p.id);
+    const others = ids.filter((id) => id !== currentUserId);
+    setSelectedIds(others.length > 0 ? others : ids);
+  }, [participantKey, currentUserId]);
 
   useEffect(() => {
     if (!participants.some((p) => p.id === paidById)) {
@@ -66,6 +70,8 @@ export function ExpenseSplitForm({
   }, [participants, paidById, currentUserId]);
 
   const parsedAmount = parseFloat(amount);
+  const hasDebtors = selectedIds.some((id) => id !== paidById);
+
   const shares = useMemo(() => {
     if (!parsedAmount || selectedIds.length === 0) return [];
     return buildEqualShares(parsedAmount, selectedIds);
@@ -76,12 +82,9 @@ export function ExpenseSplitForm({
   const toggleParticipant = (userId: string) => {
     setSelectedIds((prev) => {
       if (prev.includes(userId)) {
-        if (prev.length === 1) return prev;
-        const next = prev.filter((id) => id !== userId);
-        if (paidById === userId && next.length > 0) {
-          setPaidById(next[0]);
-        }
-        return next;
+        const debtorsAfter = prev.filter((id) => id !== userId && id !== paidById);
+        if (debtorsAfter.length === 0) return prev;
+        return prev.filter((id) => id !== userId);
       }
       return [...prev, userId];
     });
@@ -101,8 +104,8 @@ export function ExpenseSplitForm({
       setError(t('expenses.selectParticipants'));
       return;
     }
-    if (!selectedIds.includes(paidById)) {
-      setError(t('expenses.payerMustBeIncluded'));
+    if (!selectedIds.some((id) => id !== paidById)) {
+      setError(t('expenses.selectDebtors'));
       return;
     }
     setError(null);
@@ -115,7 +118,9 @@ export function ExpenseSplitForm({
     setTitle('');
     setAmount('');
     setPaidById(currentUserId);
-    setSelectedIds(participants.map((p) => p.id));
+    const ids = participants.map((p) => p.id);
+    const others = ids.filter((id) => id !== currentUserId);
+    setSelectedIds(others.length > 0 ? others : ids);
   };
 
   if (loadingContacts) {
@@ -187,18 +192,20 @@ export function ExpenseSplitForm({
           {participants.map((person) => {
             const selected = selectedIds.includes(person.id);
             const isYou = person.id === currentUserId;
-            const isLastSelected = selected && selectedIds.length === 1;
+            const debtorsIfRemoved =
+              selectedIds.filter((id) => id !== person.id && id !== paidById).length;
+            const cannotDeselect = selected && debtorsIfRemoved === 0;
             return (
               <button
                 key={person.id}
                 type="button"
-                disabled={isLastSelected}
+                disabled={cannotDeselect}
                 onClick={() => toggleParticipant(person.id)}
                 className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
                   selected
                     ? 'border-primary bg-primary/10 text-primary'
                     : 'border-border text-muted-foreground'
-                } ${isLastSelected ? 'cursor-default' : 'cursor-pointer hover:border-primary/50'}`}
+                } ${cannotDeselect ? 'cursor-default' : 'cursor-pointer hover:border-primary/50'}`}
               >
                 {person.name}
                 {isYou && ` (${t('expenses.you')})`}
@@ -208,17 +215,21 @@ export function ExpenseSplitForm({
         </div>
       </div>
 
-      {shares.length > 0 && parsedAmount > 0 && payerName && (
+      {shares.length > 0 && parsedAmount > 0 && payerName && hasDebtors && (
         <p className="text-xs text-muted-foreground">
-          {shares.length === 1
-            ? t('expenses.splitPreviewSingle', {
-                name: participants.find((p) => p.id === shares[0].userId)?.name,
-                amount: formatCurrency(shares[0].amountOwed),
-              })
-            : t('expenses.splitPreview', {
-                count: shares.length,
-                each: formatCurrency(shares[0]?.amountOwed ?? 0),
-              })}
+          {(() => {
+            const debtShares = shares.filter((s) => s.userId !== paidById);
+            if (debtShares.length === 0) return null;
+            return debtShares.length === 1
+              ? t('expenses.splitPreviewSingle', {
+                  name: participants.find((p) => p.id === debtShares[0].userId)?.name,
+                  amount: formatCurrency(debtShares[0].amountOwed),
+                })
+              : t('expenses.splitPreview', {
+                  count: debtShares.length,
+                  each: formatCurrency(debtShares[0]?.amountOwed ?? 0),
+                });
+          })()}
           {' · '}
           {t('expenses.paidByPreview', { name: payerName })}
         </p>
@@ -230,7 +241,7 @@ export function ExpenseSplitForm({
         type="button"
         size="sm"
         className="w-full sm:w-auto"
-        disabled={isPending || !title.trim() || !parsedAmount || !selectedIds.length}
+        disabled={isPending || !title.trim() || !parsedAmount || !hasDebtors}
         onClick={handleSubmit}
       >
         {submitLabel ?? t('expenses.addExpense')}

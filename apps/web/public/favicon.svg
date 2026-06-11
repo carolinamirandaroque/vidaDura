@@ -1,4 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
   <rect width="32" height="32" rx="8" fill="#000000"/>
-  <text x="16" y="21" text-anchor="middle" fill="white" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700">VD</text>
+  <g transform="translate(4 4)" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="12" cy="14.5" rx="8.5" ry="3.25" transform="rotate(-18 12 14.5)"/>
+    <line x1="10.5" y1="5" x2="13.5" y2="19"/>
+    <path d="M8.75 6.25 10.5 4.75"/>
+    <path d="M8.75 6.25 10.5 7.75"/>
+  </g>
 </svg>

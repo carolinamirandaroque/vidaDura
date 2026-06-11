@@ -3,14 +3,25 @@ import {
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsIn,
   IsOptional,
   IsString,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import type { DeadlineStatus, EventKind } from '@lifehub/types';
 import { HubEventType, RecurrenceType } from '@prisma/client';
 
+const EVENT_KINDS = ['appointment', 'deadline'] as const satisfies readonly EventKind[];
+const DEADLINE_STATUSES = ['pending', 'done'] as const satisfies readonly DeadlineStatus[];
+
 export class UpdateEventDto {
+  @ApiPropertyOptional({ enum: EVENT_KINDS })
+  @IsOptional()
+  @IsIn(EVENT_KINDS)
+  kind?: EventKind;
+
   @ApiPropertyOptional({ enum: HubEventType })
   @IsOptional()
   @IsEnum(HubEventType)
@@ -52,10 +63,22 @@ export class UpdateEventDto {
   @IsEnum(RecurrenceType)
   recurrence?: RecurrenceType;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ nullable: true })
   @IsOptional()
+  @ValidateIf((_, value) => value != null)
   @IsDateString()
-  recurrenceEnd?: string;
+  recurrenceEnd?: string | null;
+
+  @ApiPropertyOptional({ enum: DEADLINE_STATUSES })
+  @IsOptional()
+  @IsIn(DEADLINE_STATUSES)
+  deadlineStatus?: DeadlineStatus;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @ValidateIf((_, value) => value != null)
+  @IsDateString()
+  completedAt?: string | null;
 
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()

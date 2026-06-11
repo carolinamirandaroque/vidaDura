@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException, BadRequestException 
 import {
   aggregateDebtsFromExpenses,
   calculateBalances,
+  getPendingObligations,
   isExpenseFullySettled,
   validateShares,
 } from '@lifehub/utils';
@@ -69,14 +70,6 @@ export class ExpensesService {
     );
   }
 
-  private validatePaidBy(dto: CreateExpenseDto, creatorId: string) {
-    const paidById = dto.paidById ?? creatorId;
-    const shareUserIds = new Set(dto.shares.map((s) => s.userId));
-    if (!shareUserIds.has(paidById)) {
-      throw new BadRequestException('Payer must be included in the expense split');
-    }
-  }
-
   private async notifyExpenseUpdate(expense: ExpenseRecord, actorId: string) {
     const mapped = this.mapExpense(expense);
     for (const share of expense.shares) {
@@ -102,7 +95,6 @@ export class ExpensesService {
     if (!validateShares(dto.amount, dto.shares)) {
       throw new BadRequestException('Share amounts must equal total expense amount');
     }
-    this.validatePaidBy(dto, userId);
 
     const expense = await this.expensesRepo.create(userId, dto);
     const mapped = this.mapExpense(expense);
@@ -130,14 +122,6 @@ export class ExpensesService {
 
     if (dto.shares && dto.amount && !validateShares(dto.amount, dto.shares)) {
       throw new BadRequestException('Share amounts must equal total expense amount');
-    }
-
-    if (dto.paidById) {
-      const shares = dto.shares ?? existing.shares;
-      const shareUserIds = new Set(shares.map((s) => s.userId));
-      if (!shareUserIds.has(dto.paidById)) {
-        throw new BadRequestException('Payer must be included in the expense split');
-      }
     }
 
     const expense = await this.expensesRepo.update(id, dto);
@@ -171,6 +155,60 @@ export class ExpensesService {
 
     await this.notifyExpenseUpdate(updated, userId);
     return this.mapExpense(updated);
+  }
+
+  private canSettleObligation(
+    expense: ExpenseRecord,
+    userId: string,
+    debtorId: string,
+    creditorId: string,
+  ) {
+    return (
+      userId === debtorId ||
+      userId === creditorId ||
+      expense.creatorId === userId ||
+      expense.paidById === userId
+    );
+  }
+
+  async settleAllWithContact(userId: string, contactId: string) {
+    const expenses = await this.expensesRepo.findByUser(userId);
+    let settled = 0;
+
+    for (const expense of expenses) {
+      const mapped = this.mapExpense(expense);
+      for (const obligation of getPendingObligations(mapped)) {
+        const involvesContact =
+          (obligation.from.id === userId && obligation.to.id === contactId) ||
+          (obligation.from.id === contactId && obligation.to.id === userId);
+        if (!involvesContact) continue;
+        if (!this.canSettleObligation(expense, userId, obligation.from.id, obligation.to.id)) {
+          continue;
+        }
+        await this.settleShare(userId, expense.id, obligation.shareId, true);
+        settled++;
+      }
+    }
+
+    return { settled };
+  }
+
+  async settleAll(userId: string) {
+    const expenses = await this.expensesRepo.findByUser(userId);
+    let settled = 0;
+
+    for (const expense of expenses) {
+      const mapped = this.mapExpense(expense);
+      for (const obligation of getPendingObligations(mapped)) {
+        if (!this.canSettleObligation(expense, userId, obligation.from.id, obligation.to.id)) {
+          continue;
+        }
+        await this.settleShare(userId, expense.id, obligation.shareId, true);
+        settled++;
+      }
+    }
+
+    return { settled };
   }
 
   async remove(userId: string, id: string) {

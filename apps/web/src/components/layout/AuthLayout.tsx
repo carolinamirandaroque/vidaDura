@@ -1,6 +1,6 @@
 import { Outlet } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Sparkles } from 'lucide-react';
+import { PaddleBoardIcon } from '@/components/shared/PaddleBoardIcon';
 
 export function AuthLayout() {
   const { t } = useTranslation();
@@ -9,7 +9,7 @@ export function AuthLayout() {
     <div className="flex min-h-screen">
       <div className="hidden flex-1 flex-col justify-between bg-primary p-12 text-primary-foreground lg:flex">
         <div className="flex items-center gap-3">
-          <Sparkles className="h-8 w-8" />
+          <PaddleBoardIcon className="h-8 w-8" />
           <span className="text-2xl font-bold">{t('common.appName')}</span>
         </div>
         <div>

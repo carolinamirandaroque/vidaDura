@@ -11,10 +11,10 @@ export default defineConfig({
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         id: '/',
-        name: 'VidaDura',
-        short_name: 'VidaDura',
+        name: 'vida duura',
+        short_name: 'vida duura',
         description: 'Gestão pessoal e colaborativa',
-        theme_color: '#000000',
+        theme_color: '#f97316',
         background_color: '#000000',
         display: 'standalone',
         orientation: 'portrait',

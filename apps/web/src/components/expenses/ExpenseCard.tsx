@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { ArrowRight, CheckCircle2 } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Trash2 } from 'lucide-react';
 import { Badge, Button, cn } from '@lifehub/ui';
 import { getExpenseObligations, getExpenseSettlementStatus } from '@lifehub/utils';
 import { useFormatters } from '@/hooks/useFormatters';
@@ -9,6 +9,8 @@ interface ExpenseCardProps {
   expense: Expense;
   currentUserId: string;
   onSettleShare?: (expenseId: string, shareId: string) => void;
+  onDelete?: (expenseId: string) => void;
+  deleting?: boolean;
   settlingShareId?: string | null;
   compact?: boolean;
 }
@@ -17,6 +19,8 @@ export function ExpenseCard({
   expense,
   currentUserId,
   onSettleShare,
+  onDelete,
+  deleting,
   settlingShareId,
   compact,
 }: ExpenseCardProps) {
@@ -31,6 +35,20 @@ export function ExpenseCard({
     currentUserId === expense.paidById ||
     currentUserId === expense.creatorId;
 
+  const userOwes = obligations.some((o) => o.from.id === currentUserId && !o.settled);
+  const userIsOwed = obligations.some((o) => o.to.id === currentUserId && !o.settled);
+
+  const statusKey =
+    status === 'settled'
+      ? 'settled'
+      : status === 'partial'
+        ? 'partial'
+        : userIsOwed && !userOwes
+          ? 'awaiting'
+          : userOwes
+            ? 'toPay'
+            : 'pending';
+
   const statusBadge = {
     settled: {
       label: t('expenses.settled'),
@@ -41,11 +59,21 @@ export function ExpenseCard({
       label: t('expenses.partiallySettled'),
       className: 'border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-300',
     },
+    awaiting: {
+      label: t('expenses.awaitingPayment'),
+      className: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+    },
+    toPay: {
+      label: t('expenses.toPay'),
+      className: 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300',
+    },
     pending: {
       label: t('expenses.pending'),
       className: 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300',
     },
-  }[status];
+  }[statusKey];
+
+  const isCreator = expense.creatorId === currentUserId;
 
   return (
     <div className={compact ? 'rounded-lg border p-3 space-y-2' : 'space-y-2'}>
@@ -67,9 +95,27 @@ export function ExpenseCard({
             {expense.eventTitle && ` · ${expense.eventTitle}`}
           </p>
         </div>
-        <span className="shrink-0 text-lg font-semibold">
-          {formatCurrency(expense.amount, expense.currency)}
-        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="text-lg font-semibold">
+            {formatCurrency(expense.amount, expense.currency)}
+          </span>
+          {isCreator && onDelete && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+              disabled={deleting}
+              onClick={() => {
+                if (window.confirm(t('expenses.deleteConfirm'))) {
+                  onDelete(expense.id);
+                }
+              }}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {obligations.length > 0 && (
@@ -115,7 +161,11 @@ export function ExpenseCard({
                     onClick={() => onSettleShare(expense.id, obligation.shareId)}
                   >
                     <CheckCircle2 className="mr-1 h-3 w-3" />
-                    {t('expenses.markShareSettled', { name: obligation.from.name })}
+                    {currentUserId === obligation.from.id
+                      ? t('expenses.markSelfPaid')
+                      : currentUserId === expense.paidById || currentUserId === expense.creatorId
+                        ? t('expenses.markReceived', { name: obligation.from.name })
+                        : t('expenses.markShareSettled', { name: obligation.from.name })}
                   </Button>
                 )
               )}

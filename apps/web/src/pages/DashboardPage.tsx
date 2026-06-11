@@ -10,14 +10,15 @@ import {
   Bell,
   ShoppingCart,
   ArrowRight,
-  Sparkles,
   TrendingUp,
   PartyPopper,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent, Badge, Skeleton, Button, cn } from '@lifehub/ui';
 import { api } from '@/lib/api';
+import { getEventTypeColor } from '@/lib/event-types';
 import { useFormatters } from '@/hooks/useFormatters';
 import { useAuthStore } from '@/stores/auth.store';
+import { PaddleBoardIcon } from '@/components/shared/PaddleBoardIcon';
 import { DonutChart } from '@/components/dashboard/DonutChart';
 import { StatCard } from '@/components/dashboard/StatCard';
 import type { Task } from '@lifehub/types';
@@ -85,13 +86,13 @@ export function DashboardPage() {
   return (
     <div className="space-y-6 pb-8">
       {/* Hero */}
-      <section className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/20 via-violet-500/10 to-background p-6 sm:p-8">
+      <section className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/20 via-orange-500/10 to-background p-6 sm:p-8">
         <div className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-primary/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-10 left-1/3 h-32 w-32 rounded-full bg-violet-500/15 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-10 left-1/3 h-32 w-32 rounded-full bg-orange-500/15 blur-3xl" />
         <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
-              <Sparkles className="h-4 w-4 text-primary" />
+              <PaddleBoardIcon className="h-4 w-4 text-primary" />
               {formatDate(new Date())}
             </div>
             <h1 className="text-2xl font-bold sm:text-3xl">
@@ -160,7 +161,7 @@ export function DashboardPage() {
                 ? t('dashboard.statOwedToYou', { amount: formatCurrency(stats.expensesOwedToYou) })
                 : t('dashboard.statDebtsHint')
             }
-            accent="from-violet-500/15 to-violet-500/5 border-violet-500/20"
+            accent="from-orange-500/15 to-orange-500/5 border-orange-500/20"
           />
         </div>
       )}
@@ -298,7 +299,7 @@ export function DashboardPage() {
                   >
                     <div
                       className="h-8 w-1 shrink-0 rounded-full"
-                      style={{ backgroundColor: event.calendar?.color ?? 'hsl(var(--primary))' }}
+                      style={{ backgroundColor: getEventTypeColor(event.type) }}
                     />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{event.title}</p>
@@ -421,7 +422,7 @@ export function DashboardPage() {
             { to: '/calendar', icon: Calendar, label: t('nav.calendar'), color: 'text-blue-500' },
             { to: '/tasks', icon: CheckSquare, label: t('nav.tasks'), color: 'text-emerald-500' },
             { to: '/shopping', icon: ShoppingCart, label: t('nav.shopping'), color: 'text-orange-500' },
-            { to: '/expenses', icon: Wallet, label: t('nav.expenses'), color: 'text-violet-500' },
+            { to: '/expenses', icon: Wallet, label: t('nav.expenses'), color: 'text-orange-500' },
             { to: '/contacts', icon: Users, label: t('nav.contacts'), color: 'text-pink-500' },
             { to: '/notifications', icon: Bell, label: t('dashboard.notifications'), color: 'text-amber-500' },
           ].map(({ to, icon: Icon, label, color }) => (
