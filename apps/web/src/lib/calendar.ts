@@ -123,4 +123,29 @@ export function formatViewTitle(view: string, date: Date, locale: string): strin
   }
 }
 
+export function toDatetimeLocalValue(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function resolveEventDates(
+  startInput?: string,
+  endInput?: string,
+): { startDate: string; endDate: string } {
+  const now = new Date();
+  const start = startInput?.trim() ? new Date(startInput) : now;
+  let end = endInput?.trim() ? new Date(endInput) : new Date(start);
+  if (Number.isNaN(start.getTime())) {
+    throw new Error('Invalid start date');
+  }
+  if (Number.isNaN(end.getTime())) {
+    end = new Date(start);
+  }
+  if (end <= start) {
+    end = new Date(start.getTime() + 60 * 60 * 1000);
+  }
+  return { startDate: start.toISOString(), endDate: end.toISOString() };
+}
+
 export { getMonthRange };

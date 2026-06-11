@@ -151,6 +151,11 @@
       "other": "Other"
     },
     "participants": "participants",
+    "titleRequired": "Title is required",
+    "titlePlaceholder": "e.g. Birthday dinner",
+    "datesOptionalHint": "Optional — defaults to now if empty",
+    "editEvent": "Edit event",
+    "saveDetails": "Save title and dates",
     "inviteContacts": "Invite contacts",
     "inviteHint": "Invited contacts see the event on their calendar and get a notification.",
     "saveInvites": "Save invites",

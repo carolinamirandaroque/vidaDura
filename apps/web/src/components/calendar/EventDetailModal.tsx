@@ -23,6 +23,7 @@ import {
   Badge,
   Button,
   Input,
+  Label,
   Select,
   SelectContent,
   SelectItem,
@@ -39,6 +40,7 @@ import { ExpenseCard } from '@/components/expenses/ExpenseCard';
 import { useFormatters } from '@/hooks/useFormatters';
 import { useAuthStore } from '@/stores/auth.store';
 import { getInitials } from '@lifehub/utils';
+import { resolveEventDates, toDatetimeLocalValue } from '@/lib/calendar';
 import { ContactMultiSelect } from '@/components/shared/ContactMultiSelect';
 import type { HubEventType, EventItemType, Task, User, EventDetail } from '@lifehub/types';
 
@@ -174,6 +176,10 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
   const [newItemType, setNewItemType] = useState<EventItemType>('buy');
   const [newItemAssigneeId, setNewItemAssigneeId] = useState<string | undefined>();
   const [inviteIds, setInviteIds] = useState<string[]>([]);
+  const [editTitle, setEditTitle] = useState('');
+  const [editStart, setEditStart] = useState('');
+  const [editEnd, setEditEnd] = useState('');
+  const [detailsError, setDetailsError] = useState<string | null>(null);
 
   const { data: detail, isLoading } = useQuery({
     queryKey: ['event-detail', eventId],
@@ -199,6 +205,15 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
       setInviteIds(detail.participants.map((p) => p.userId));
     }
   }, [detail?.id, detail?.participants]);
+
+  useEffect(() => {
+    if (detail) {
+      setEditTitle(detail.title);
+      setEditStart(toDatetimeLocalValue(detail.startDate));
+      setEditEnd(toDatetimeLocalValue(detail.endDate));
+      setDetailsError(null);
+    }
+  }, [detail?.id, detail?.title, detail?.startDate, detail?.endDate]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['event-detail', eventId] });
@@ -273,6 +288,20 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
     onSuccess: invalidate,
   });
 
+  const updateDetailsMutation = useMutation({
+    mutationFn: () => {
+      const title = editTitle.trim();
+      if (!title) throw new Error(t('eventHub.titleRequired'));
+      const { startDate, endDate } = resolveEventDates(editStart, editEnd);
+      return api.updateEvent(eventId!, { title, startDate, endDate });
+    },
+    onSuccess: () => {
+      setDetailsError(null);
+      invalidate();
+    },
+    onError: (err: Error) => setDetailsError(err.message),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteEvent(eventId!),
     onSuccess: () => {
@@ -303,17 +332,23 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
                   <Icon className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <DialogTitle className="text-xl">{detail.title}</DialogTitle>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <Badge style={{ backgroundColor: `${color}20`, color }}>
-                      {t(`eventHub.types.${detail.type}`)}
-                    </Badge>
-                    <span className="text-sm text-muted-foreground">
-                      {detail.allDay
-                        ? `${formatDateTime(detail.startDate).split(',')[0]} · ${t('calendar.allDay')}`
-                        : `${formatDateTime(detail.startDate)} – ${formatTime(detail.endDate)}`}
-                    </span>
-                  </div>
+                  {isCreator ? (
+                    <DialogTitle className="text-left text-xl">{t('eventHub.editEvent')}</DialogTitle>
+                  ) : (
+                    <>
+                      <DialogTitle className="text-xl">{detail.title}</DialogTitle>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <Badge style={{ backgroundColor: `${color}20`, color }}>
+                          {t(`eventHub.types.${detail.type}`)}
+                        </Badge>
+                        <span className="text-sm text-muted-foreground">
+                          {detail.allDay
+                            ? `${formatDateTime(detail.startDate).split(',')[0]} · ${t('calendar.allDay')}`
+                            : `${formatDateTime(detail.startDate)} – ${formatTime(detail.endDate)}`}
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
                 <Button
                   variant="ghost"
@@ -337,6 +372,46 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
                 </Button>
               </div>
             </DialogHeader>
+
+            {isCreator && (
+              <div className="space-y-3 rounded-lg border p-3">
+                <div className="space-y-2">
+                  <Label>{t('common.title')} *</Label>
+                  <Input
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    placeholder={t('eventHub.titlePlaceholder')}
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>{t('common.start')}</Label>
+                    <Input
+                      type="datetime-local"
+                      value={editStart}
+                      onChange={(e) => setEditStart(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t('common.end')}</Label>
+                    <Input
+                      type="datetime-local"
+                      value={editEnd}
+                      onChange={(e) => setEditEnd(e.target.value)}
+                    />
+                  </div>
+                </div>
+                {detailsError && <p className="text-sm text-destructive">{detailsError}</p>}
+                <Button
+                  size="sm"
+                  className="w-full"
+                  disabled={updateDetailsMutation.isPending}
+                  onClick={() => updateDetailsMutation.mutate()}
+                >
+                  {t('eventHub.saveDetails')}
+                </Button>
+              </div>
+            )}
 
             {(detail.description || detail.location) && (
               <div className="space-y-1 text-sm text-muted-foreground">

@@ -19,7 +19,7 @@ import {
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
 import { ContactMultiSelect } from '@/components/shared/ContactMultiSelect';
-import { getViewRange, navigateDate, formatViewTitle } from '@/lib/calendar';
+import { getViewRange, navigateDate, formatViewTitle, resolveEventDates } from '@/lib/calendar';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { MonthGrid } from '@/components/calendar/MonthGrid';
 import { WeekGrid } from '@/components/calendar/WeekGrid';
@@ -133,17 +133,26 @@ export function CalendarPage() {
                 className="space-y-4"
                 onSubmit={(e) => {
                   e.preventDefault();
+                  const title = newEvent.title.trim();
+                  if (!title) {
+                    setCreateError(t('eventHub.titleRequired'));
+                    return;
+                  }
                   const calendarId = newEvent.calendarId || calendars?.[0]?.id;
                   if (!calendarId) {
                     setCreateError(t('calendar.noCalendar'));
                     return;
                   }
+                  const { startDate, endDate } = resolveEventDates(
+                    newEvent.startDate,
+                    newEvent.endDate,
+                  );
                   createMutation.mutate({
-                    title: newEvent.title,
+                    title,
                     type: newEvent.type,
                     calendarId,
-                    startDate: new Date(newEvent.startDate).toISOString(),
-                    endDate: new Date(newEvent.endDate).toISOString(),
+                    startDate,
+                    endDate,
                     participantIds:
                       newEvent.participantIds.length > 0 ? newEvent.participantIds : undefined,
                   });
@@ -170,10 +179,11 @@ export function CalendarPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>{t('common.title')}</Label>
+                  <Label>{t('common.title')} *</Label>
                   <Input
                     value={newEvent.title}
                     onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+                    placeholder={t('eventHub.titlePlaceholder')}
                     required
                   />
                 </div>
@@ -183,8 +193,8 @@ export function CalendarPage() {
                     type="datetime-local"
                     value={newEvent.startDate}
                     onChange={(e) => setNewEvent({ ...newEvent, startDate: e.target.value })}
-                    required
                   />
+                  <p className="text-xs text-muted-foreground">{t('eventHub.datesOptionalHint')}</p>
                 </div>
                 <div className="space-y-2">
                   <Label>{t('common.end')}</Label>
@@ -192,7 +202,6 @@ export function CalendarPage() {
                     type="datetime-local"
                     value={newEvent.endDate}
                     onChange={(e) => setNewEvent({ ...newEvent, endDate: e.target.value })}
-                    required
                   />
                 </div>
                 <div className="space-y-2">

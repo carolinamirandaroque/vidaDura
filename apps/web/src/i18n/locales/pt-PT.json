@@ -151,6 +151,11 @@
       "other": "Outro"
     },
     "participants": "participantes",
+    "titleRequired": "O título é obrigatório",
+    "titlePlaceholder": "Ex: Jantar de aniversário",
+    "datesOptionalHint": "Opcional — se vazio, usa a data e hora atuais",
+    "editEvent": "Editar evento",
+    "saveDetails": "Guardar título e datas",
     "inviteContacts": "Convidar contactos",
     "inviteHint": "Os contactos convidados veem o evento no calendário deles e recebem notificação.",
     "saveInvites": "Guardar convites",
