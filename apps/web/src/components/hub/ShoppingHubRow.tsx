@@ -10,6 +10,7 @@ interface ShoppingHubRowProps {
   title: string;
   done?: boolean;
   canEdit?: boolean;
+  dragHandle?: React.ReactNode;
   contextLabel?: string | null;
   assignee?: User;
   assigneeControl?: React.ReactNode;
@@ -26,6 +27,7 @@ export function ShoppingHubRow({
   title,
   done,
   canEdit = true,
+  dragHandle,
   contextLabel,
   assignee,
   assigneeControl,
@@ -47,6 +49,7 @@ export function ShoppingHubRow({
           : cn(hubRowClass, 'group')
       }
     >
+      {dragHandle}
       {atHomeStyle ? (
         <Home className="h-4 w-4 shrink-0 text-emerald-600" />
       ) : (

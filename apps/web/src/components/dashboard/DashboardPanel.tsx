@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, cn } from '@lifehub/ui';
+import { hubIconWrapClass } from '@/components/hub/hub-styles';
 
 interface DashboardPanelProps {
   title: string;
@@ -34,8 +35,8 @@ export function DashboardPanel({
       >
         <div className="flex items-center gap-2.5">
           {Icon && (
-            <div className="rounded-lg border bg-background/90 p-1.5 shadow-sm">
-              <Icon className={cn('h-4 w-4', iconClassName ?? 'text-muted-foreground')} />
+            <div className={hubIconWrapClass}>
+              <Icon className={cn('h-3.5 w-3.5 text-primary', iconClassName)} />
             </div>
           )}
           <CardTitle className="text-sm font-semibold tracking-tight">{title}</CardTitle>

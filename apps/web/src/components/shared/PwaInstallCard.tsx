@@ -1,49 +1,41 @@
 import { Download, Smartphone } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button, Card, CardContent, CardHeader, CardTitle } from '@lifehub/ui';
+import { Button } from '@lifehub/ui';
+import { HubHint, HubPanel } from '@/components/hub';
 import { usePwaInstall } from '@/hooks/usePwaInstall';
 
 export function PwaInstallCard() {
   const { t } = useTranslation();
-  const { canInstall, isInstalled, showIosHint, install } = usePwaInstall();
+  const { canInstall, isInstalled, manualHint, install } = usePwaInstall();
 
   if (isInstalled) {
     return (
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Smartphone className="h-4 w-4" />
-            {t('pwa.title')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">{t('pwa.installed')}</p>
-        </CardContent>
-      </Card>
+      <HubPanel title={t('pwa.title')} icon={Smartphone}>
+        <HubHint>{t('pwa.installed')}</HubHint>
+      </HubPanel>
     );
   }
 
-  if (!canInstall && !showIosHint) return null;
+  if (!canInstall && !manualHint) return null;
+
+  const hintText =
+    manualHint === 'ios'
+      ? t('pwa.iosHint')
+      : manualHint === 'android'
+        ? t('pwa.androidHint')
+        : t('pwa.description');
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Smartphone className="h-4 w-4" />
-          {t('pwa.title')}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          {showIosHint ? t('pwa.iosHint') : t('pwa.description')}
-        </p>
+    <HubPanel title={t('pwa.title')} icon={Smartphone}>
+      <div className="space-y-3">
+        <HubHint>{hintText}</HubHint>
         {canInstall && (
           <Button onClick={() => install()} className="w-full">
             <Download className="mr-2 h-4 w-4" />
             {t('pwa.install')}
           </Button>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </HubPanel>
   );
 }

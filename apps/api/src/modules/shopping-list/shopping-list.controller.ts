@@ -61,6 +61,15 @@ export class ShoppingListController {
     return this.shoppingListService.findAll(userId, doneFilter);
   }
 
+  @Post('reorder')
+  @ApiOperation({ summary: 'Reorder shopping items (drag and drop)' })
+  reorder(
+    @CurrentUser('sub') userId: string,
+    @Body() updates: { id: string; position: number }[],
+  ) {
+    return this.shoppingListService.reorder(userId, updates);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Add item to home shopping list' })
   create(@CurrentUser('sub') userId: string, @Body() dto: CreateShoppingItemDto) {

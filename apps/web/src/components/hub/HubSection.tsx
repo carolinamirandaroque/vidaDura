@@ -1,4 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
+import { hubIconWrapClass, hubSectionClass } from './hub-styles';
 
 interface HubSectionProps {
   icon: LucideIcon;
@@ -9,9 +10,9 @@ interface HubSectionProps {
 
 export function HubSection({ icon: Icon, title, count, children }: HubSectionProps) {
   return (
-    <section className="space-y-2 sm:space-y-3">
+    <section className={hubSectionClass}>
       <div className="flex items-center gap-2 border-b border-border/60 pb-2">
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
+        <div className={hubIconWrapClass}>
           <Icon className="h-3.5 w-3.5 text-primary" />
         </div>
         <h3 className="text-sm font-semibold sm:text-base">{title}</h3>

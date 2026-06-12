@@ -177,11 +177,6 @@ export class TasksService {
         if (!isCollaborator) continue;
 
         collaboratorEventIds.push(event.id);
-        await this.ensureEventRootTask({
-          id: event.id,
-          title: event.title,
-          createdById: event.createdById,
-        });
       }
 
       if (collaboratorEventIds.length > 0) {

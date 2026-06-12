@@ -251,6 +251,8 @@ model Event {
   title          String
   description    String?
   location       String?
+  locationLat    Float?
+  locationLng    Float?
   startDate      DateTime
   endDate        DateTime
   allDay         Boolean         @default(false)

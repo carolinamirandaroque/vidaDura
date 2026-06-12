@@ -24,6 +24,7 @@ import { getInitials, isEventRootTask } from '@lifehub/utils';
 import {
   EditableLabel,
   HubAddRow,
+  HubGroupLabel,
   TaskStatusControl,
   hubListClass,
   hubRowClass,
@@ -165,11 +166,8 @@ function TaskNode({
 
   if (isEventRoot) {
     return (
-      <div>
-        <div
-          className={cn(hubRowClass, 'bg-muted/40')}
-          style={{ marginLeft: depth > 0 ? `${depth * 12}px` : undefined }}
-        >
+      <div style={{ marginLeft: depth > 0 ? `${depth * 12}px` : undefined }}>
+        <div className="mb-2 flex items-center gap-1">
           {dragHandle}
           <button
             type="button"
@@ -182,11 +180,10 @@ function TaskNode({
               <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
             )}
           </button>
-
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-medium">{task.title}</p>
-          </div>
-
+          <HubGroupLabel className="mb-0 flex min-w-0 flex-1 items-center gap-1.5 normal-case text-primary">
+            <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">{task.title}</span>
+          </HubGroupLabel>
           {!expanded && childCount > 0 && (
             <span className="shrink-0 text-xs text-muted-foreground">
               {t('tasks.subtaskCount', { count: childCount })}

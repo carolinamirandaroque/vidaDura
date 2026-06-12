@@ -1,13 +1,22 @@
+import { useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Bell, CheckCheck } from 'lucide-react';
-import { Button, Card, CardContent, Badge } from '@lifehub/ui';
+import { Button } from '@lifehub/ui';
 import { api } from '@/lib/api';
 import { useFormatters } from '@/hooks/useFormatters';
 import { PageShell } from '@/components/layout/PageShell';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLoading } from '@/components/layout/PageLoading';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { NotificationRow } from '@/components/notifications/NotificationRow';
+import { HubSection, hubListClass, hubSectionClass } from '@/components/hub';
+import type { Notification } from '@lifehub/types';
+
+function getEventId(notification: Notification): string | null {
+  const eventId = notification.data?.eventId;
+  return typeof eventId === 'string' ? eventId : null;
+}
 
 export function NotificationsPage() {
   const { t } = useTranslation();
@@ -19,20 +28,45 @@ export function NotificationsPage() {
     queryFn: () => api.getNotifications(),
   });
 
+  const { data: pendingInvites } = useQuery({
+    queryKey: ['events', 'invites'],
+    queryFn: () => api.getPendingInvites(),
+  });
+
+  const pendingEventIds = useMemo(
+    () => new Set(pendingInvites?.map((invite) => invite.eventId) ?? []),
+    [pendingInvites],
+  );
+
+  const refreshState = () => {
+    queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    queryClient.invalidateQueries({ queryKey: ['events'] });
+    queryClient.invalidateQueries({ queryKey: ['events', 'invites'] });
+    queryClient.invalidateQueries({ queryKey: ['event-detail'] });
+  };
+
   const markAllMutation = useMutation({
     mutationFn: api.markAllNotificationsRead,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+    onSuccess: refreshState,
   });
 
   const markReadMutation = useMutation({
     mutationFn: api.markNotificationRead,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+    onSuccess: refreshState,
+  });
+
+  const respondInviteMutation = useMutation({
+    mutationFn: ({ eventId, status }: { eventId: string; status: 'accepted' | 'declined' }) =>
+      api.respondToInvite(eventId, status),
+    onSuccess: refreshState,
   });
 
   if (isLoading) return <PageLoading />;
 
   return (
-    <PageShell width="content">
+    <PageShell width="wide" className="pb-6">
       <PageHeader
         title={t('notifications.title')}
         subtitle={t('notifications.subtitle')}
@@ -43,36 +77,45 @@ export function NotificationsPage() {
         }
       />
 
-      {!notifications?.length ? (
-        <EmptyState
-          icon={Bell}
-          title={t('notifications.noNotifications')}
-          description={t('notifications.noNotificationsDescription')}
-        />
-      ) : (
-        <div className="space-y-2">
-          {notifications.map((notification) => (
-            <Card
-              key={notification.id}
-              className={`rounded-xl transition-opacity ${notification.read ? 'opacity-60' : 'cursor-pointer hover:bg-accent/20'}`}
-              onClick={() => !notification.read && markReadMutation.mutate(notification.id)}
-            >
-              <CardContent className="flex items-start gap-3 p-4">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-medium">{notification.title}</h3>
-                    {!notification.read && <Badge>{t('notifications.new')}</Badge>}
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">{notification.message}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {formatDateTime(notification.createdAt)}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      <div className={hubSectionClass}>
+        {!notifications?.length ? (
+          <EmptyState
+            icon={Bell}
+            title={t('notifications.noNotifications')}
+            description={t('notifications.noNotificationsDescription')}
+          />
+        ) : (
+          <HubSection icon={Bell} title={t('notifications.title')}>
+            <div className={hubListClass}>
+              {notifications.map((notification) => {
+                const eventId = getEventId(notification);
+                const isEventInvite = notification.type === 'event_invite' && !!eventId;
+                const showInviteActions =
+                  isEventInvite && !!eventId && pendingEventIds.has(eventId);
+
+                return (
+                  <NotificationRow
+                    key={notification.id}
+                    notification={notification}
+                    formattedDate={formatDateTime(notification.createdAt)}
+                    showInviteActions={showInviteActions}
+                    isResponding={respondInviteMutation.isPending}
+                    onMarkRead={() => markReadMutation.mutate(notification.id)}
+                    onAcceptInvite={() => {
+                      if (!eventId) return;
+                      respondInviteMutation.mutate({ eventId, status: 'accepted' });
+                    }}
+                    onDeclineInvite={() => {
+                      if (!eventId) return;
+                      respondInviteMutation.mutate({ eventId, status: 'declined' });
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </HubSection>
+        )}
+      </div>
     </PageShell>
   );
 }

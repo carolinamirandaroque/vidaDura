@@ -79,7 +79,7 @@ export class EventsRepository {
           {
             OR: [
               { createdById: userId },
-              { participants: { some: { userId } } },
+              { participants: { some: { userId, status: 'accepted' } } },
               { calendar: { members: { some: { userId } } } },
             ],
           },
@@ -126,6 +126,8 @@ export class EventsRepository {
         title: dto.title,
         description: dto.description,
         location: dto.location,
+        locationLat: dto.locationLat ?? null,
+        locationLng: dto.locationLng ?? null,
         startDate: new Date(dto.startDate),
         endDate: new Date(dto.endDate),
         allDay: isDeadline ? true : (dto.allDay ?? false),
@@ -135,7 +137,10 @@ export class EventsRepository {
         createdById,
         participants: dto.participantIds?.length
           ? {
-              create: dto.participantIds.map((userId) => ({ userId })),
+              create: dto.participantIds.map((userId) => ({
+                userId,
+                status: userId === createdById ? 'accepted' : 'pending',
+              })),
             }
           : undefined,
       },
@@ -149,10 +154,18 @@ export class EventsRepository {
   update(id: string, dto: UpdateEventDto) {
     return this.prisma.$transaction(async (tx) => {
       if (dto.participantIds) {
+        const event = await tx.event.findUnique({
+          where: { id },
+          select: { createdById: true },
+        });
         await tx.eventParticipant.deleteMany({ where: { eventId: id } });
         if (dto.participantIds.length) {
           await tx.eventParticipant.createMany({
-            data: dto.participantIds.map((userId) => ({ eventId: id, userId })),
+            data: dto.participantIds.map((userId) => ({
+              eventId: id,
+              userId,
+              status: userId === event?.createdById ? 'accepted' : 'pending',
+            })),
           });
         }
       }
@@ -164,7 +177,10 @@ export class EventsRepository {
           type: dto.type,
           title: dto.title,
           description: dto.description,
-          location: dto.location,
+          location:
+            dto.location === undefined ? undefined : dto.location?.trim() || null,
+          locationLat: dto.locationLat === undefined ? undefined : dto.locationLat,
+          locationLng: dto.locationLng === undefined ? undefined : dto.locationLng,
           startDate: dto.startDate ? new Date(dto.startDate) : undefined,
           endDate: dto.endDate ? new Date(dto.endDate) : undefined,
           allDay: dto.allDay,
@@ -297,13 +313,15 @@ export class EventsRepository {
       where: { id: eventId },
       select: {
         createdById: true,
-        participants: { select: { userId: true } },
+        participants: { select: { userId: true, status: true } },
       },
     });
     if (!event) return false;
     return (
       event.createdById === userId ||
-      event.participants.some((participant) => participant.userId === userId)
+      event.participants.some(
+        (participant) => participant.userId === userId && participant.status === 'accepted',
+      )
     );
   }
 }

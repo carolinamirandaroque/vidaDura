@@ -62,4 +62,9 @@ export class NotificationsService {
   async countUnread(userId: string) {
     return this.notificationsRepo.countUnread(userId);
   }
+
+  async markEventInvitesRead(userId: string, eventId: string) {
+    await this.notificationsRepo.markEventInvitesRead(userId, eventId);
+    this.wsGateway.emitToUser(userId, 'notification', { eventId, read: true });
+  }
 }

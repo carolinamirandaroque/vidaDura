@@ -19,8 +19,10 @@ import {
   Package,
   Trash2,
   Bell,
+  Check,
   CheckCircle2,
   LogOut,
+  X,
 } from 'lucide-react';
 import {
   Dialog,
@@ -54,6 +56,7 @@ import { getDeadlineColor, isDeadline, isDeadlineOverdue } from '@lifehub/utils'
 import { resolveDueDate, resolveEventDates, toDatetimeLocalValue } from '@/lib/calendar';
 import { HUB_EVENT_TYPES, getEventTypeColor } from '@/lib/event-types';
 import { ContactMultiSelect } from '@/components/shared/ContactMultiSelect';
+import { LocationPicker } from '@/components/shared/LocationPicker';
 import { DatePickerField } from '@/components/shared/DatePickerField';
 import { DateTimePickerField } from '@/components/shared/DateTimePickerField';
 import {
@@ -125,6 +128,9 @@ export function EventDetailModal({
   const [editRecurrence, setEditRecurrence] = useState<RecurrenceType>('none');
   const [editRecurrenceEnd, setEditRecurrenceEnd] = useState('');
   const [editDueDate, setEditDueDate] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editLocationLat, setEditLocationLat] = useState<number | null>(null);
+  const [editLocationLng, setEditLocationLng] = useState<number | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
 
   const { data: detail, isLoading } = useQuery({
@@ -145,15 +151,17 @@ export function EventDetailModal({
   );
 
   const isCreator = detail?.createdById === currentUser?.id;
-  const isParticipant = useMemo(
-    () => detail?.participants?.some((p) => p.userId === currentUser?.id) ?? false,
+  const myParticipation = useMemo(
+    () => detail?.participants?.find((p) => p.userId === currentUser?.id),
     [detail, currentUser?.id],
   );
+  const isAcceptedParticipant = myParticipation?.status === 'accepted';
+  const isPendingInvite = myParticipation?.status === 'pending';
   const isCollaborator = useMemo(() => {
     if (!detail || !currentUser?.id) return false;
-    return detail.createdById === currentUser.id || isParticipant;
-  }, [detail, currentUser?.id, isParticipant]);
-  const canLeaveEvent = isCreator || isParticipant;
+    return detail.createdById === currentUser.id || isAcceptedParticipant;
+  }, [detail, currentUser?.id, isAcceptedParticipant]);
+  const canLeaveEvent = isCreator || isAcceptedParticipant;
   const accessEntries = useMemo(
     () => (detail ? buildEventAccessEntries(detail) : []),
     [detail],
@@ -175,6 +183,9 @@ export function EventDetailModal({
         detail.recurrenceEnd ? detail.recurrenceEnd.slice(0, 10) : '',
       );
       setEditDueDate(detail.endDate.slice(0, 10));
+      setEditLocation(detail.location ?? '');
+      setEditLocationLat(detail.locationLat ?? null);
+      setEditLocationLng(detail.locationLng ?? null);
       setDetailsError(null);
     }
   }, [
@@ -185,6 +196,9 @@ export function EventDetailModal({
     detail?.endDate,
     detail?.recurrence,
     detail?.recurrenceEnd,
+    detail?.location,
+    detail?.locationLat,
+    detail?.locationLng,
   ]);
 
   const invalidate = () => {
@@ -340,6 +354,16 @@ export function EventDetailModal({
     onSuccess: invalidate,
   });
 
+  const respondInviteMutation = useMutation({
+    mutationFn: (status: 'accepted' | 'declined') => api.respondToInvite(eventId!, status),
+    onSuccess: (_data, status) => {
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      if (status === 'declined') onOpenChange(false);
+    },
+  });
+
   const handleRemoveParticipant = (userId: string, name: string) => {
     if (!window.confirm(t('eventHub.removeParticipantConfirm', { name }))) return;
     const next = inviteIds.filter((id) => id !== userId);
@@ -376,6 +400,9 @@ export function EventDetailModal({
             : editRecurrenceEnd.trim()
               ? new Date(editRecurrenceEnd).toISOString()
               : null,
+        location: isDeadlineEvent ? undefined : editLocation.trim() || null,
+        locationLat: isDeadlineEvent ? undefined : editLocationLat,
+        locationLng: isDeadlineEvent ? undefined : editLocationLng,
       });
     },
     onSuccess: () => {
@@ -453,6 +480,34 @@ export function EventDetailModal({
           </>
         ) : (
           <div className="space-y-5">
+            {isPendingInvite && (
+              <div className="rounded-xl border border-primary/25 bg-primary/10 p-4">
+                <p className="text-sm font-medium">{t('notifications.invitePrompt')}</p>
+                <p className="mt-1 text-sm text-muted-foreground">{t('notifications.inviteHint')}</p>
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    disabled={respondInviteMutation.isPending}
+                    onClick={() => respondInviteMutation.mutate('accepted')}
+                  >
+                    <Check className="mr-1 h-3.5 w-3.5" />
+                    {t('notifications.acceptInvite')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1"
+                    disabled={respondInviteMutation.isPending}
+                    onClick={() => respondInviteMutation.mutate('declined')}
+                  >
+                    <X className="mr-1 h-3.5 w-3.5" />
+                    {t('notifications.declineInvite')}
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <DialogHeader>
               <div className="flex items-start gap-3">
                 <div
@@ -620,6 +675,25 @@ export function EventDetailModal({
                     placeholder={t('eventHub.titlePlaceholder')}
                   />
                 </div>
+                {!isDeadlineEvent && (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-event-location">{t('eventHub.location')}</Label>
+                    <LocationPicker
+                      id="edit-event-location"
+                      placeholder={t('eventHub.locationPlaceholder')}
+                      value={{
+                        location: editLocation,
+                        locationLat: editLocationLat,
+                        locationLng: editLocationLng,
+                      }}
+                      onChange={(next) => {
+                        setEditLocation(next.location);
+                        setEditLocationLat(next.locationLat);
+                        setEditLocationLng(next.locationLng);
+                      }}
+                    />
+                  </div>
+                )}
                 {isDeadlineEvent ? (
                   <div className="space-y-2">
                     <Label>{t('eventHub.dueDate')} *</Label>
@@ -688,13 +762,24 @@ export function EventDetailModal({
               </div>
             )}
 
-            {(detail.description || detail.location) && (
+            {!isCollaborator && (detail.description || detail.location) && (
               <div className="space-y-1 text-sm text-muted-foreground">
                 {detail.description && <p>{detail.description}</p>}
                 {detail.location && (
                   <p className="flex items-center gap-1">
-                    <MapPin className="h-3.5 w-3.5" />
-                    {detail.location}
+                    <MapPin className="h-3.5 w-3.5 shrink-0" />
+                    {detail.locationLat != null && detail.locationLng != null ? (
+                      <a
+                        href={`https://www.openstreetmap.org/?mlat=${detail.locationLat}&mlon=${detail.locationLng}#map=16/${detail.locationLat}/${detail.locationLng}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="hover:underline"
+                      >
+                        {detail.location}
+                      </a>
+                    ) : (
+                      detail.location
+                    )}
                   </p>
                 )}
               </div>

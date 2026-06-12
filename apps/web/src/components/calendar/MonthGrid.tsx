@@ -3,6 +3,7 @@ import { cn } from '@lifehub/ui';
 import type { Event } from '@lifehub/types';
 import { getMonthGridDays, getWeekdayLabels, eventsForDay } from '@/lib/calendar';
 import { useFormatters } from '@/hooks/useFormatters';
+import { hubPanelClass } from '@/components/hub';
 import { EventChip } from './EventChip';
 
 interface MonthGridProps {
@@ -14,6 +15,10 @@ interface MonthGridProps {
 
 const MAX_VISIBLE = 3;
 
+function isCalendarEventTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && Boolean(target.closest('[data-calendar-event]'));
+}
+
 export function MonthGrid({ currentDate, events, onDayClick, onEventClick }: MonthGridProps) {
   const { i18n } = useTranslation();
   const { formatTime } = useFormatters();
@@ -21,8 +26,12 @@ export function MonthGrid({ currentDate, events, onDayClick, onEventClick }: Mon
   const weekdays = getWeekdayLabels(locale);
   const days = getMonthGridDays(currentDate);
 
+  const handleDayActivate = (date: Date) => {
+    onDayClick?.(date);
+  };
+
   return (
-    <div className="overflow-hidden rounded-xl border bg-card">
+    <div className={hubPanelClass}>
       <div className="grid grid-cols-7 border-b bg-muted/40">
         {weekdays.map((label) => (
           <div
@@ -42,23 +51,33 @@ export function MonthGrid({ currentDate, events, onDayClick, onEventClick }: Mon
           return (
             <div
               key={date.toISOString()}
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                if (isCalendarEventTarget(e.target)) return;
+                handleDayActivate(date);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleDayActivate(date);
+                }
+              }}
               className={cn(
-                'min-h-[100px] border-b border-r p-1.5 transition-colors sm:min-h-[120px]',
+                'min-h-[100px] cursor-pointer border-b border-r p-1.5 transition-colors hover:bg-accent/20 sm:min-h-[120px]',
                 !isCurrentMonth && 'bg-muted/20',
                 isToday && 'bg-primary/5',
               )}
             >
-              <button
-                type="button"
-                onClick={() => onDayClick?.(date)}
+              <span
                 className={cn(
-                  'mb-1 flex h-7 w-7 items-center justify-center rounded-full text-sm font-medium transition-colors hover:bg-accent',
-                  isToday && 'bg-primary text-primary-foreground hover:bg-primary/90',
+                  'mb-1 flex h-7 w-7 items-center justify-center rounded-full text-sm font-medium',
+                  isToday && 'bg-primary text-primary-foreground',
                   !isCurrentMonth && 'text-muted-foreground',
                 )}
               >
                 {date.getDate()}
-              </button>
+              </span>
 
               <div className="space-y-0.5">
                 {dayEvents.slice(0, MAX_VISIBLE).map((event) => (
@@ -72,7 +91,9 @@ export function MonthGrid({ currentDate, events, onDayClick, onEventClick }: Mon
                   />
                 ))}
                 {hidden > 0 && (
-                  <p className="px-1 text-[10px] font-medium text-muted-foreground">+{hidden}</p>
+                  <span className="px-1 text-[10px] font-medium text-muted-foreground">
+                    +{hidden}
+                  </span>
                 )}
               </div>
             </div>

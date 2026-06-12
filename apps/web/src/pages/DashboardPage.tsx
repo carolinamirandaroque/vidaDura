@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -21,7 +21,11 @@ import { useAuthStore } from '@/stores/auth.store';
 import { PaddleBoardIcon } from '@/components/shared/PaddleBoardIcon';
 import { AttentionCard } from '@/components/dashboard/AttentionCard';
 import { DashboardPanel } from '@/components/dashboard/DashboardPanel';
+import { DashboardLocationsPanel } from '@/components/dashboard/DashboardLocationsPanel';
 import { FinanceSummaryCard } from '@/components/dashboard/FinanceSummaryCard';
+import { expandRecurringEvents } from '@lifehub/utils';
+import { getYearRange } from '@/lib/calendar';
+import { buildLocationStats, filterEventsByLocation } from '@/lib/event-locations';
 import { hubEmptyClass, hubRowClass } from '@/components/hub/hub-styles';
 import type { Task } from '@lifehub/types';
 
@@ -41,12 +45,36 @@ export function DashboardPage() {
   const { formatDateTime, formatCurrency, formatDate } = useFormatters();
   const user = useAuthStore((s) => s.user);
   const userId = user?.id;
+  const [selectedLocationKey, setSelectedLocationKey] = useState<string | null>(null);
+  const currentYear = new Date().getFullYear();
+  const { start: yearStart, end: yearEnd } = getYearRange(new Date());
 
   const { data, isLoading } = useQuery({
     queryKey: ['dashboard', userId],
     queryFn: () => api.getDashboard(),
     enabled: !!userId,
   });
+
+  const { data: yearEvents = [] } = useQuery({
+    queryKey: ['events', 'year', yearStart.toISOString()],
+    queryFn: () => api.getEvents(yearStart.toISOString(), yearEnd.toISOString()),
+    enabled: !!userId,
+  });
+
+  const yearDisplayEvents = useMemo(
+    () => expandRecurringEvents(yearEvents, yearStart, yearEnd),
+    [yearEvents, yearStart, yearEnd],
+  );
+
+  const yearLocationStats = useMemo(
+    () => buildLocationStats(yearDisplayEvents),
+    [yearDisplayEvents],
+  );
+
+  const filteredLocatedEvents = useMemo(
+    () => filterEventsByLocation(yearDisplayEvents, selectedLocationKey),
+    [yearDisplayEvents, selectedLocationKey],
+  );
 
   const firstName = user?.name?.split(' ')[0] ?? '';
   const stats = data?.stats;
@@ -126,7 +154,7 @@ export function DashboardPage() {
     }
     if (alertCount > 0) {
       chips.push({
-        to: stats.unreadNotifications ? '/notifications' : stats.pendingInvites ? '/calendar' : '/contacts',
+        to: '/notifications',
         icon: Bell,
         label: t('dashboard.chipAlerts', { count: alertCount }),
       });
@@ -255,6 +283,16 @@ export function DashboardPage() {
           />
         </div>
       )}
+
+      <DashboardLocationsPanel
+        year={currentYear}
+        yearStats={yearLocationStats}
+        events={filteredLocatedEvents}
+        allYearEvents={yearDisplayEvents}
+        tasks={flatTasks}
+        selectedLocationKey={selectedLocationKey}
+        onLocationChange={setSelectedLocationKey}
+      />
 
       <div className="grid gap-4 lg:grid-cols-5">
         {/* Agenda */}
@@ -417,7 +455,7 @@ export function DashboardPage() {
             >
               <div className="space-y-1.5">
                 {!!stats?.pendingInvites && (
-                  <Link to="/calendar" className={hubRowClass}>
+                  <Link to="/notifications" className={hubRowClass}>
                     <Calendar className="h-4 w-4 shrink-0 text-sky-500" />
                     <span className="flex-1 text-sm">{t('dashboard.eventInvites', { count: stats.pendingInvites })}</span>
                   </Link>

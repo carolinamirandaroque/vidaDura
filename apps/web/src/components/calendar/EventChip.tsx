@@ -20,7 +20,11 @@ export function EventChip({ event, compact, showTime, time, onClick }: EventChip
   return (
     <button
       type="button"
-      onClick={() => onClick?.(event)}
+      data-calendar-event
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick?.(event);
+      }}
       className={cn(
         'flex w-full items-center gap-1 truncate rounded px-1.5 py-0.5 text-left text-xs font-medium transition-opacity hover:opacity-80',
         compact ? 'leading-tight' : 'py-1',

@@ -22,6 +22,7 @@ interface ExpenseCardProps {
   deleting?: boolean;
   settlingShareId?: string | null;
   compact?: boolean;
+  variant?: 'default' | 'history';
 }
 
 export function ExpenseCard({
@@ -37,6 +38,7 @@ export function ExpenseCard({
   deleting,
   settlingShareId,
   compact,
+  variant = 'default',
 }: ExpenseCardProps) {
   const { t } = useTranslation();
   const { formatCurrency, formatDate } = useFormatters();
@@ -57,6 +59,9 @@ export function ExpenseCard({
 
   const userOwes = obligations.some((o) => o.from.id === currentUserId && !o.settled);
   const userIsOwed = obligations.some((o) => o.to.id === currentUserId && !o.settled);
+
+  const isHistory = variant === 'history';
+  const isFullySettled = status === 'settled';
 
   const statusKey =
     status === 'settled'
@@ -104,8 +109,22 @@ export function ExpenseCard({
     onAmountChange?.(expense.id, value);
   };
 
+  const splitSummary =
+    obligations.length > 0
+      ? obligations
+          .map((o) => `${o.from.name} → ${o.to.name} ${formatCurrency(o.amount, expense.currency)}`)
+          .join(' · ')
+      : t('expenses.noDebtsOnExpense');
+
   return (
-    <div className={cn(hubRowClass, 'flex-col items-stretch gap-2', !compact && 'p-3')}>
+    <div
+      className={cn(
+        hubRowClass,
+        'flex-col items-stretch gap-2',
+        !compact && 'p-3',
+        isHistory && isFullySettled && 'opacity-80',
+      )}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -114,15 +133,19 @@ export function ExpenseCard({
               {statusBadge.label}
             </Badge>
           </div>
-          {!compact && (
+          {(isHistory || !compact) && (
             <p className="text-sm text-muted-foreground">
-              {formatDate(expense.date)} · {expense.creator?.name}
+              {formatDate(expense.date)}
+              {!isHistory && expense.creator?.name ? ` · ${expense.creator.name}` : ''}
             </p>
           )}
           <p className="text-xs text-muted-foreground">
             {t('expenses.paidBy', { name: payer?.name ?? '…' })}
             {expense.eventTitle && ` · ${expense.eventTitle}`}
           </p>
+          {isHistory && (
+            <p className="mt-1 text-xs text-muted-foreground">{splitSummary}</p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {editingAmount && canEditAmount && onAmountChange ? (
@@ -176,7 +199,7 @@ export function ExpenseCard({
         </div>
       </div>
 
-      {obligations.length > 0 && (
+      {!isHistory && obligations.length > 0 && (
         <div className="space-y-1.5 rounded-md border border-dashed px-2.5 py-2">
           <p className="text-xs font-medium text-muted-foreground">{t('expenses.owes')}</p>
           {obligations.map((obligation) => (
@@ -232,8 +255,41 @@ export function ExpenseCard({
         </div>
       )}
 
-      {obligations.length === 0 && (
+      {!isHistory && obligations.length === 0 && (
         <p className="text-xs text-muted-foreground">{t('expenses.noDebtsOnExpense')}</p>
+      )}
+
+      {isHistory && !isFullySettled && obligations.length > 0 && (
+        <div className="space-y-1.5 rounded-md border border-dashed px-2.5 py-2">
+          <p className="text-xs font-medium text-muted-foreground">{t('expenses.stillPending')}</p>
+          {obligations
+            .filter((o) => !o.settled)
+            .map((obligation) => (
+              <div key={obligation.shareId} className="flex flex-wrap items-center gap-1.5 text-sm">
+                <span className="font-medium">{obligation.from.name}</span>
+                <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                <span className="font-medium">{obligation.to.name}</span>
+                <span className="ml-auto font-semibold text-destructive">
+                  {formatCurrency(obligation.amount, expense.currency)}
+                </span>
+                {onSettleShare && canSettleShare(obligation.from.id) && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    disabled={settlingShareId === obligation.shareId}
+                    onClick={() => onSettleShare(expense.id, obligation.shareId)}
+                  >
+                    <CheckCircle2 className="mr-1 h-3 w-3" />
+                    {currentUserId === obligation.from.id
+                      ? t('expenses.markSelfPaid')
+                      : t('expenses.markReceived', { name: obligation.from.name })}
+                  </Button>
+                )}
+              </div>
+            ))}
+        </div>
       )}
 
       {showAccess && accessEntries.length > 1 && (

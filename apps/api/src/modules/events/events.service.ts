@@ -49,6 +49,8 @@ export class EventsService {
     title: string;
     description: string | null;
     location: string | null;
+    locationLat?: number | null;
+    locationLng?: number | null;
     startDate: Date;
     endDate: Date;
     allDay: boolean;
@@ -77,6 +79,8 @@ export class EventsService {
       title: event.title,
       description: event.description,
       location: event.location,
+      locationLat: event.locationLat ?? null,
+      locationLng: event.locationLng ?? null,
       startDate: event.startDate.toISOString(),
       endDate: event.endDate.toISOString(),
       allDay: event.allDay,
@@ -124,7 +128,7 @@ export class EventsService {
       id: string;
       calendarId: string;
       createdById: string;
-      participants?: Array<{ userId: string }>;
+      participants?: Array<{ userId: string; status?: string }>;
     },
     userId: string,
   ) {
@@ -140,23 +144,30 @@ export class EventsService {
   private assertIsEventCollaborator(
     event: {
       createdById: string;
-      participants?: Array<{ userId: string }>;
+      participants?: Array<{ userId: string; status?: string }>;
     },
     userId: string,
   ) {
     const isCreator = event.createdById === userId;
-    const isParticipant = event.participants?.some((p) => p.userId === userId);
-    if (!isCreator && !isParticipant) {
+    const isAcceptedParticipant = event.participants?.some(
+      (p) => p.userId === userId && p.status === 'accepted',
+    );
+    if (!isCreator && !isAcceptedParticipant) {
       throw new ForbiddenException('Only event participants can modify this');
     }
   }
 
   private getEventCollaboratorIds(event: {
     createdById: string;
-    participants?: Array<{ userId: string }>;
+    participants?: Array<{ userId: string; status?: string }>;
   }) {
     return [
-      ...new Set([event.createdById, ...(event.participants?.map((p) => p.userId) ?? [])]),
+      ...new Set([
+        event.createdById,
+        ...(event.participants
+          ?.filter((p) => p.status === 'accepted')
+          .map((p) => p.userId) ?? []),
+      ]),
     ];
   }
 
@@ -301,7 +312,6 @@ export class EventsService {
             message: `Foste convidado para "${event.title}"`,
             data: { eventId: event.id },
           });
-          this.wsGateway.emitToUser(participantId, 'event_updated', mapped);
         }
       }
     }
@@ -361,7 +371,7 @@ export class EventsService {
     if (!existing) throw new NotFoundException('Event not found');
     const isCollaborator =
       existing.createdById === userId ||
-      existing.participants?.some((p) => p.userId === userId);
+      existing.participants?.some((p) => p.userId === userId && p.status === 'accepted');
     if (!isCollaborator) {
       await this.checkCalendarAccess(existing.calendarId, userId, 'editor');
     }
@@ -483,7 +493,27 @@ export class EventsService {
   }
 
   async respondToInvite(userId: string, eventId: string, status: 'accepted' | 'declined') {
+    const existing = await this.eventsRepo.findById(eventId);
+    if (!existing) throw new NotFoundException('Event not found');
+
+    const invite = existing.participants?.find((p) => p.userId === userId);
+    if (!invite || invite.status !== 'pending') {
+      throw new BadRequestException('No pending invite for this event');
+    }
+
     const participant = await this.eventsRepo.updateParticipantStatus(eventId, userId, status);
+    const refreshed = await this.eventsRepo.findById(eventId);
+    const mapped = this.mapEvent(refreshed!);
+    await this.notificationsService.markEventInvitesRead(userId, eventId);
+
+    if (status === 'accepted') {
+      this.wsGateway.emitToUser(userId, 'event_updated', mapped);
+      this.wsGateway.emitToUsers(this.getEventCollaboratorIds(refreshed!), 'event_updated', mapped);
+    } else {
+      this.wsGateway.emitToUser(userId, 'event_removed', { id: eventId });
+      this.wsGateway.emitToUser(existing.createdById, 'event_updated', mapped);
+    }
+
     return {
       id: participant.id,
       eventId: participant.eventId,
@@ -628,14 +658,6 @@ export class EventsService {
     const event = await this.eventsRepo.findDetailById(id);
     if (!event) throw new NotFoundException('Event not found');
     await this.assertCanViewEvent(event, userId);
-
-    if (event.kind !== 'deadline') {
-      await this.tasksService.ensureEventRootTask({
-        id: event.id,
-        title: event.title,
-        createdById: event.createdById,
-      });
-    }
 
     const eventTasks =
       event.kind !== 'deadline'

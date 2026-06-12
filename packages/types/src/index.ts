@@ -94,7 +94,7 @@ export interface AddCalendarMemberDto {
 
 // Event Hub
 export type RecurrenceType = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
-export type EventView = 'day' | 'week' | 'month' | 'agenda';
+export type EventView = 'day' | 'week' | 'month' | 'year' | 'agenda';
 export type ParticipantStatus = 'pending' | 'accepted' | 'declined';
 export type HubEventType =
   | 'social'
@@ -119,6 +119,8 @@ export interface Event {
   title: string;
   description: string | null;
   location: string | null;
+  locationLat: number | null;
+  locationLng: number | null;
   startDate: string;
   endDate: string;
   allDay: boolean;
@@ -182,6 +184,12 @@ export interface CreateDeadlineDto {
   recurrenceEnd?: string;
 }
 
+export interface GeocodingPlace {
+  label: string;
+  lat: number;
+  lng: number;
+}
+
 export interface CreateEventDto {
   calendarId: string;
   kind?: EventKind;
@@ -189,6 +197,8 @@ export interface CreateEventDto {
   title: string;
   description?: string;
   location?: string;
+  locationLat?: number | null;
+  locationLng?: number | null;
   startDate: string;
   endDate: string;
   allDay?: boolean;
@@ -202,7 +212,9 @@ export interface UpdateEventDto {
   type?: HubEventType;
   title?: string;
   description?: string;
-  location?: string;
+  location?: string | null;
+  locationLat?: number | null;
+  locationLng?: number | null;
   startDate?: string;
   endDate?: string;
   allDay?: boolean;

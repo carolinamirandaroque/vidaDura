@@ -41,6 +41,18 @@ export function getWeekdayLabels(locale: string): string[] {
   );
 }
 
+/** Compact weekday headers for year mini-months (unique per column). */
+export function getYearGridWeekdayLabels(locale: string): string[] {
+  if (locale === 'pt-PT') {
+    return ['2ª', '3ª', '4ª', '5ª', '6ª', 'S', 'D'];
+  }
+
+  const monday = new Date(2024, 0, 1);
+  return Array.from({ length: 7 }, (_, i) =>
+    addDays(monday, i).toLocaleDateString(locale, { weekday: 'narrow' }),
+  );
+}
+
 export function eventOnDay(event: Event, day: Date): boolean {
   const dayStart = startOfDay(day);
   const dayEnd = endOfDay(day);
@@ -55,6 +67,14 @@ export function eventsForDay(events: Event[], day: Date): Event[] {
     .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
 }
 
+export function getYearRange(date: Date): { start: Date; end: Date } {
+  const year = date.getFullYear();
+  return {
+    start: new Date(year, 0, 1),
+    end: new Date(year, 11, 31, 23, 59, 59, 999),
+  };
+}
+
 export function getViewRange(view: string, date: Date): { start: Date; end: Date } {
   switch (view) {
     case 'day': {
@@ -63,6 +83,8 @@ export function getViewRange(view: string, date: Date): { start: Date; end: Date
     }
     case 'week':
       return getWeekRange(date);
+    case 'year':
+      return getYearRange(date);
     case 'agenda': {
       const start = startOfDay(date);
       const end = addDays(start, 30);
@@ -91,6 +113,9 @@ export function navigateDate(view: string, date: Date, dir: -1 | 1): Date {
     case 'agenda':
       d.setDate(d.getDate() + dir * 14);
       break;
+    case 'year':
+      d.setFullYear(d.getFullYear() + dir);
+      break;
     case 'month':
     default:
       d.setMonth(d.getMonth() + dir);
@@ -117,10 +142,17 @@ export function formatViewTitle(view: string, date: Date, locale: string): strin
       const end = addDays(date, 30);
       return `${date.toLocaleDateString(locale, { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })}`;
     }
+    case 'year':
+      return String(date.getFullYear());
     case 'month':
     default:
       return date.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
   }
+}
+
+export function toDateInputValue(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 export function toDatetimeLocalValue(date: Date | string): string {

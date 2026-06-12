@@ -1,32 +1,26 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { UserPlus, Check, X, Trash2, Clock, Users } from 'lucide-react';
-import {
-  Button,
-  Card,
-  CardContent,
-  Avatar,
-  AvatarImage,
-  AvatarFallback,
-  Badge,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-} from '@lifehub/ui';
+import { Clock, Users } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
-import { getInitials } from '@lifehub/utils';
 import { PageShell } from '@/components/layout/PageShell';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLoading } from '@/components/layout/PageLoading';
 import { SearchField } from '@/components/shared/SearchField';
 import { StatusBanner } from '@/components/shared/StatusBanner';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { ContactRow, type ConnectionStatus } from '@/components/contacts/ContactRow';
+import {
+  HubGroupLabel,
+  HubSection,
+  SectionChipTabs,
+  hubListClass,
+  hubSectionClass,
+} from '@/components/hub';
 import type { ConnectionWithUser, User } from '@lifehub/types';
 
-type ConnectionStatus = 'none' | 'accepted' | 'pending_sent' | 'pending_received';
+type ContactsTab = 'contacts' | 'pending';
 
 function otherUserId(conn: ConnectionWithUser, currentUserId: string) {
   return conn.requesterId === currentUserId ? conn.receiverId : conn.requesterId;
@@ -53,84 +47,10 @@ function getConnectionStatus(
   return pendingConn.requesterId === currentUserId ? 'pending_sent' : 'pending_received';
 }
 
-function UserRow({
-  user,
-  status,
-  onAdd,
-  onAccept,
-  onReject,
-  onCancel,
-  onRemove,
-  isLoading,
-}: {
-  user: User;
-  status: ConnectionStatus;
-  onAdd?: () => void;
-  onAccept?: () => void;
-  onReject?: () => void;
-  onCancel?: () => void;
-  onRemove?: () => void;
-  isLoading?: boolean;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <Card className="rounded-xl">
-      <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
-        <Avatar>
-          <AvatarImage src={user.avatar ?? undefined} />
-          <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
-        </Avatar>
-        <div className="flex-1 min-w-0">
-          <p className="font-medium truncate">{user.name}</p>
-          <p className="text-sm text-muted-foreground truncate">{user.email}</p>
-        </div>
-        {status === 'accepted' && (
-          <>
-            <Badge variant="success">{t('contacts.contact')}</Badge>
-            {onRemove && (
-              <Button variant="ghost" size="icon" disabled={isLoading} onClick={onRemove}>
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            )}
-          </>
-        )}
-        {status === 'pending_sent' && (
-          <>
-            <Badge variant="warning" className="gap-1">
-              <Clock className="h-3 w-3" />
-              {t('contacts.waiting')}
-            </Badge>
-            {onCancel && (
-              <Button variant="ghost" size="sm" disabled={isLoading} onClick={onCancel}>
-                {t('contacts.cancel')}
-              </Button>
-            )}
-          </>
-        )}
-        {status === 'pending_received' && onAccept && onReject && (
-          <>
-            <Button size="sm" disabled={isLoading} onClick={onAccept}>
-              <Check className="mr-1 h-4 w-4" /> {t('contacts.accept')}
-            </Button>
-            <Button size="sm" variant="outline" disabled={isLoading} onClick={onReject}>
-              <X className="mr-1 h-4 w-4" /> {t('contacts.reject')}
-            </Button>
-          </>
-        )}
-        {status === 'none' && onAdd && (
-          <Button size="sm" disabled={isLoading} onClick={onAdd}>
-            <UserPlus className="mr-1 h-4 w-4" /> {t('contacts.add')}
-          </Button>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 export function ContactsPage() {
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<ContactsTab>('contacts');
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -159,6 +79,7 @@ export function ContactsPage() {
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ['connections'] });
     queryClient.invalidateQueries({ queryKey: ['contacts'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
   };
 
   const acceptMutation = useMutation({
@@ -217,147 +138,159 @@ export function ContactsPage() {
 
   if (contactsLoading || pendingLoading) return <PageLoading />;
 
-  const getStatus = (userId: string) =>
-    getConnectionStatus(userId, currentUser?.id, contacts, pending);
+  const getStatus = (targetUserId: string) =>
+    getConnectionStatus(targetUserId, currentUser?.id, contacts, pending);
 
   const findPendingConn = (targetUserId: string) =>
     userId ? pending?.find((c) => otherUserId(c, userId) === targetUserId) : undefined;
 
+  const tabs = [
+    {
+      id: 'contacts' as const,
+      label: t('contacts.contactsTabShort', { count: contacts?.length ?? 0 }),
+      icon: <Users className="h-3.5 w-3.5" />,
+    },
+    {
+      id: 'pending' as const,
+      label: t('contacts.pendingTabShort', { count: pending?.length ?? 0 }),
+      icon: <Clock className="h-3.5 w-3.5" />,
+    },
+  ];
+
   return (
-    <PageShell width="wide">
+    <PageShell width="wide" className="pb-6">
       <PageHeader title={t('contacts.title')} subtitle={t('contacts.subtitle')} />
 
-      <SearchField
-        value={search}
-        onChange={(value) => {
-          setSearch(value);
-          setActionSuccess(null);
-          setActionError(null);
-        }}
-        placeholder={t('contacts.searchPlaceholder')}
-      />
+      <div className={hubSectionClass}>
+        <SearchField
+          value={search}
+          onChange={(value) => {
+            setSearch(value);
+            setActionSuccess(null);
+            setActionError(null);
+          }}
+          placeholder={t('contacts.searchPlaceholder')}
+        />
 
-      {actionError && <StatusBanner variant="error">{actionError}</StatusBanner>}
-      {actionSuccess && <StatusBanner variant="success">{actionSuccess}</StatusBanner>}
+        {actionError && <StatusBanner variant="error">{actionError}</StatusBanner>}
+        {actionSuccess && <StatusBanner variant="success">{actionSuccess}</StatusBanner>}
 
-      {search.trim().length >= 2 && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium text-muted-foreground">{t('contacts.results')}</h3>
-          {searching ? (
-            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
-          ) : !searchResults?.length ? (
-            <p className="text-sm text-muted-foreground">{t('contacts.noResults')}</p>
-          ) : (
-            searchResults.map((user) => {
-              const status = getStatus(user.id);
-              const pendingConn = findPendingConn(user.id);
-              return (
-                <UserRow
-                  key={user.id}
-                  user={user}
-                  status={status}
-                  isLoading={isMutating}
-                  onAdd={
-                    status === 'none'
-                      ? () => sendMutation.mutate(user.id)
-                      : undefined
-                  }
-                  onAccept={
-                    status === 'pending_received' && pendingConn
-                      ? () => acceptMutation.mutate(pendingConn.id)
-                      : undefined
-                  }
-                  onReject={
-                    status === 'pending_received' && pendingConn
-                      ? () => rejectMutation.mutate(pendingConn.id)
-                      : undefined
-                  }
-                  onCancel={
-                    status === 'pending_sent' && pendingConn
-                      ? () => removeMutation.mutate(pendingConn.id)
-                      : undefined
-                  }
-                />
-              );
-            })
-          )}
-        </div>
-      )}
-
-      <Tabs defaultValue="contacts">
-        <TabsList>
-          <TabsTrigger value="contacts">
-            {t('contacts.contactsTab', { count: contacts?.length ?? 0 })}
-          </TabsTrigger>
-          <TabsTrigger value="pending">
-            {t('contacts.pendingTab', { count: pending?.length ?? 0 })}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="contacts" className="mt-4">
-          {!contacts?.length ? (
-            <EmptyState
-              icon={Users}
-              title={t('contacts.noContacts')}
-              description={t('contacts.noContactsDescription')}
-            />
-          ) : (
-            <div className="space-y-2">
-              {contacts.map((conn) => (
-                <UserRow
-                  key={conn.id}
-                  user={userId ? resolveOtherUser(conn, userId) : conn.user}
-                  status="accepted"
-                  isLoading={isMutating}
-                  onRemove={() => removeMutation.mutate(conn.id)}
-                />
-              ))}
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="pending" className="mt-4 space-y-6">
-          {!pending?.length ? (
-            <p className="text-center text-muted-foreground">{t('contacts.noPending')}</p>
-          ) : (
-            <>
-              {incomingPending.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-medium text-muted-foreground">
-                    {t('contacts.incoming')}
-                  </h3>
-                  {incomingPending.map((conn) => (
-                    <UserRow
-                      key={conn.id}
-                      user={userId ? resolveOtherUser(conn, userId) : conn.user}
-                      status="pending_received"
+        {search.trim().length >= 2 && (
+          <section className={hubSectionClass}>
+            <HubGroupLabel>{t('contacts.results')}</HubGroupLabel>
+            {searching ? (
+              <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+            ) : !searchResults?.length ? (
+              <p className="text-sm text-muted-foreground">{t('contacts.noResults')}</p>
+            ) : (
+              <div className={hubListClass}>
+                {searchResults.map((user) => {
+                  const status = getStatus(user.id);
+                  const pendingConn = findPendingConn(user.id);
+                  return (
+                    <ContactRow
+                      key={user.id}
+                      user={user}
+                      status={status}
                       isLoading={isMutating}
-                      onAccept={() => acceptMutation.mutate(conn.id)}
-                      onReject={() => rejectMutation.mutate(conn.id)}
+                      onAdd={status === 'none' ? () => sendMutation.mutate(user.id) : undefined}
+                      onAccept={
+                        status === 'pending_received' && pendingConn
+                          ? () => acceptMutation.mutate(pendingConn.id)
+                          : undefined
+                      }
+                      onReject={
+                        status === 'pending_received' && pendingConn
+                          ? () => rejectMutation.mutate(pendingConn.id)
+                          : undefined
+                      }
+                      onCancel={
+                        status === 'pending_sent' && pendingConn
+                          ? () => removeMutation.mutate(pendingConn.id)
+                          : undefined
+                      }
                     />
-                  ))}
-                </div>
-              )}
-              {outgoingPending.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-medium text-muted-foreground">
-                    {t('contacts.outgoing')}
-                  </h3>
-                  {outgoingPending.map((conn) => (
-                    <UserRow
-                      key={conn.id}
-                      user={userId ? resolveOtherUser(conn, userId) : conn.user}
-                      status="pending_sent"
-                      isLoading={isMutating}
-                      onCancel={() => removeMutation.mutate(conn.id)}
-                    />
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </TabsContent>
-      </Tabs>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
+        <SectionChipTabs tabs={tabs} activeId={activeTab} onChange={setActiveTab} />
+
+        {activeTab === 'contacts' && (
+          <HubSection icon={Users} title={t('contacts.contactsTabShort', { count: contacts?.length ?? 0 })}>
+            {!contacts?.length ? (
+              <EmptyState
+                icon={Users}
+                title={t('contacts.noContacts')}
+                description={t('contacts.noContactsDescription')}
+              />
+            ) : (
+              <div className={hubListClass}>
+                {contacts.map((conn) => (
+                  <ContactRow
+                    key={conn.id}
+                    user={userId ? resolveOtherUser(conn, userId) : conn.user}
+                    status="accepted"
+                    isLoading={isMutating}
+                    onRemove={() => removeMutation.mutate(conn.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </HubSection>
+        )}
+
+        {activeTab === 'pending' && (
+          <HubSection icon={Clock} title={t('contacts.pendingTabShort', { count: pending?.length ?? 0 })}>
+            {!pending?.length ? (
+              <EmptyState
+                icon={Clock}
+                title={t('contacts.noPending')}
+                description={t('contacts.noPendingDescription')}
+              />
+            ) : (
+              <>
+                {incomingPending.length > 0 && (
+                  <div className={hubSectionClass}>
+                    <HubGroupLabel>{t('contacts.incoming')}</HubGroupLabel>
+                    <div className={hubListClass}>
+                      {incomingPending.map((conn) => (
+                        <ContactRow
+                          key={conn.id}
+                          user={userId ? resolveOtherUser(conn, userId) : conn.user}
+                          status="pending_received"
+                          isLoading={isMutating}
+                          onAccept={() => acceptMutation.mutate(conn.id)}
+                          onReject={() => rejectMutation.mutate(conn.id)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {outgoingPending.length > 0 && (
+                  <div className={hubSectionClass}>
+                    <HubGroupLabel>{t('contacts.outgoing')}</HubGroupLabel>
+                    <div className={hubListClass}>
+                      {outgoingPending.map((conn) => (
+                        <ContactRow
+                          key={conn.id}
+                          user={userId ? resolveOtherUser(conn, userId) : conn.user}
+                          status="pending_sent"
+                          isLoading={isMutating}
+                          onCancel={() => removeMutation.mutate(conn.id)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </HubSection>
+        )}
+      </div>
     </PageShell>
   );
 }

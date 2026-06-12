@@ -4,9 +4,11 @@ import {
   IsDateString,
   IsEnum,
   IsIn,
+  IsNumber,
   IsOptional,
   IsString,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import type { EventKind } from '@lifehub/types';
@@ -43,6 +45,18 @@ export class CreateEventDto {
   @IsOptional()
   @IsString()
   location?: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @ValidateIf((_, value) => value != null)
+  @IsNumber()
+  locationLat?: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @ValidateIf((_, value) => value != null)
+  @IsNumber()
+  locationLng?: number | null;
 
   @ApiProperty()
   @IsDateString()

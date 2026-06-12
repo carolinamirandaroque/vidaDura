@@ -3,6 +3,7 @@ import { cn } from '@lifehub/ui';
 import type { Event } from '@lifehub/types';
 import { getWeekDays, eventsForDay } from '@/lib/calendar';
 import { useFormatters } from '@/hooks/useFormatters';
+import { hubPanelClass } from '@/components/hub';
 import { EventChip } from './EventChip';
 
 interface WeekGridProps {
@@ -12,6 +13,10 @@ interface WeekGridProps {
   onEventClick?: (event: Event) => void;
 }
 
+function isCalendarEventTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && Boolean(target.closest('[data-calendar-event]'));
+}
+
 export function WeekGrid({ currentDate, events, onDayClick, onEventClick }: WeekGridProps) {
   const { i18n } = useTranslation();
   const { formatTime } = useFormatters();
@@ -19,7 +24,7 @@ export function WeekGrid({ currentDate, events, onDayClick, onEventClick }: Week
   const days = getWeekDays(currentDate);
 
   return (
-    <div className="overflow-hidden rounded-xl border bg-card">
+    <div className={hubPanelClass}>
       <div className="grid grid-cols-7 border-b">
         {days.map(({ date, isToday }) => (
           <button
@@ -52,8 +57,20 @@ export function WeekGrid({ currentDate, events, onDayClick, onEventClick }: Week
           return (
             <div
               key={date.toISOString()}
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                if (isCalendarEventTarget(e.target)) return;
+                onDayClick?.(date);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onDayClick?.(date);
+                }
+              }}
               className={cn(
-                'space-y-1 border-r p-2 last:border-r-0',
+                'cursor-pointer space-y-1 border-r p-2 transition-colors last:border-r-0 hover:bg-accent/20',
                 isToday && 'bg-primary/5',
               )}
             >

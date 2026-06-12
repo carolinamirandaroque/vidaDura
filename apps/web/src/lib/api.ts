@@ -23,6 +23,7 @@ import type {
   UpdateExpenseDto,
   UpdateTaskDto,
   EventDetail,
+  GeocodingPlace,
   CreateEventTaskDto,
   CreateEventItemDto,
   UpdateEventItemDto,
@@ -234,6 +235,14 @@ class ApiClient {
     return this.request<void>(`/events/${id}`, { method: 'DELETE' });
   };
 
+  searchLocations = (q: string, lang?: string, lat?: number, lon?: number) => {
+    const params = new URLSearchParams({ q });
+    if (lang) params.set('lang', lang);
+    if (lat != null) params.set('lat', String(lat));
+    if (lon != null) params.set('lon', String(lon));
+    return this.request<GeocodingPlace[]>(`/geocoding/search?${params}`);
+  };
+
   deleteEventOccurrence = (id: string, occursOn: string) => {
     const params = new URLSearchParams({ occursOn });
     return this.request<Event>(`/events/${id}/occurrence?${params}`, { method: 'DELETE' });
@@ -429,6 +438,13 @@ class ApiClient {
 
   deleteShoppingItem = (id: string) => {
     return this.request(`/shopping-list/${id}`, { method: 'DELETE' });
+  };
+
+  reorderShoppingItems = (updates: { id: string; position: number }[]) => {
+    return this.request<ShoppingListItem[]>('/shopping-list/reorder', {
+      method: 'POST',
+      body: JSON.stringify(updates),
+    });
   };
 
   getDashboard = () => {

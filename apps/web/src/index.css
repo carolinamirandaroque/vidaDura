@@ -78,4 +78,31 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+
+  .theme-map {
+    @apply relative overflow-hidden bg-primary/5;
+  }
+
+  .theme-map .leaflet-container {
+    background: hsl(var(--muted));
+  }
+
+  .theme-map .leaflet-tile-pane {
+    filter: grayscale(0.15) sepia(0.2) hue-rotate(352deg) saturate(1.1) brightness(1.02);
+  }
+
+  .dark .theme-map .leaflet-tile-pane {
+    filter: grayscale(0.3) sepia(0.28) hue-rotate(352deg) saturate(1.2) brightness(0.9)
+      contrast(1.05);
+  }
+
+  .theme-map .leaflet-control-attribution {
+    background: hsl(var(--background) / 0.82);
+    color: hsl(var(--muted-foreground));
+    font-size: 10px;
+    backdrop-filter: blur(6px);
+    border-radius: 0.375rem;
+    margin: 0.35rem;
+    padding: 0 0.35rem;
+  }
 }

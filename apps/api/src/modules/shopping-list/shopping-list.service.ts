@@ -302,4 +302,27 @@ export class ShoppingListService {
     }
     await this.repo.delete(id);
   }
+
+  async reorder(userId: string, updates: { id: string; position: number }[]) {
+    if (!updates.length) return this.findAll(userId);
+
+    const items = await Promise.all(updates.map((update) => this.repo.findItemById(update.id)));
+    const sectionIds = new Set<string>();
+
+    for (const item of items) {
+      if (!item) throw new NotFoundException('Item not found');
+      if (!item.sectionId) {
+        if (item.ownerId !== userId) throw new ForbiddenException();
+        continue;
+      }
+      sectionIds.add(item.sectionId);
+    }
+
+    for (const sectionId of sectionIds) {
+      await this.assertSectionAccess(userId, sectionId, 'editor');
+    }
+
+    await this.repo.updatePositions(updates);
+    return this.findAll(userId);
+  }
 }

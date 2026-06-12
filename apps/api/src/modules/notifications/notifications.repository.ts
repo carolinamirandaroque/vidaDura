@@ -41,4 +41,19 @@ export class NotificationsRepository {
   countUnread(userId: string) {
     return this.prisma.notification.count({ where: { userId, read: false } });
   }
+
+  markEventInvitesRead(userId: string, eventId: string) {
+    return this.prisma.notification.updateMany({
+      where: {
+        userId,
+        type: 'event_invite',
+        read: false,
+        data: {
+          path: ['eventId'],
+          equals: eventId,
+        },
+      },
+      data: { read: true },
+    });
+  }
 }

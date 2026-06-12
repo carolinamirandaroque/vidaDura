@@ -203,10 +203,22 @@ export class ShoppingListRepository {
         title: dto.title?.trim(),
         done: dto.done,
         sectionId: dto.sectionId,
+        position: dto.position,
         boughtAt: dto.done === true ? new Date() : dto.done === false ? null : undefined,
       },
       include: itemInclude,
     });
+  }
+
+  updatePositions(updates: { id: string; position: number }[]) {
+    return this.prisma.$transaction(
+      updates.map((update) =>
+        this.prisma.shoppingListItem.update({
+          where: { id: update.id },
+          data: { position: update.position },
+        }),
+      ),
+    );
   }
 
   delete(id: string) {

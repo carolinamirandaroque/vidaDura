@@ -1,44 +1,63 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Plus, CheckCircle2 } from 'lucide-react';
+import { Plus, CheckCircle2, Wallet, History } from 'lucide-react';
 import {
   Button,
-  Card,
-  CardContent,
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-  Avatar,
-  AvatarImage,
-  AvatarFallback,
 } from '@lifehub/ui';
 import { api } from '@/lib/api';
 import { ExpenseSplitForm } from '@/components/expenses/ExpenseSplitForm';
 import { ExpenseCard } from '@/components/expenses/ExpenseCard';
-import { HubSection, hubListClass } from '@/components/hub';
-import { getInitials, hasPendingDebts } from '@lifehub/utils';
+import { BalanceContactRow } from '@/components/expenses/BalanceContactRow';
+import {
+  HubEmptyMessage,
+  HubGroupLabel,
+  HubHint,
+  HubMetricCard,
+  HubSection,
+  SectionChipTabs,
+  hubListClass,
+  hubSectionClass,
+} from '@/components/hub';
 import { useFormatters } from '@/hooks/useFormatters';
 import { PageShell } from '@/components/layout/PageShell';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLoading } from '@/components/layout/PageLoading';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { HubEmptyMessage } from '@/components/hub';
-import { Wallet } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
 import { canManageExpense } from '@/lib/entity-access';
+import type { Expense } from '@lifehub/types';
+
+type ExpensesTab = 'balances' | 'history';
+
+function groupExpensesByMonth(expenses: Expense[], locale: string) {
+  const groups = new Map<string, Expense[]>();
+
+  for (const expense of expenses) {
+    const key = new Date(expense.date).toLocaleDateString(locale, {
+      month: 'long',
+      year: 'numeric',
+    });
+    const list = groups.get(key) ?? [];
+    list.push(expense);
+    groups.set(key, list);
+  }
+
+  return Array.from(groups.entries());
+}
 
 export function ExpensesPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { formatCurrency } = useFormatters();
   const user = useAuthStore((s) => s.user);
   const userId = user?.id;
+  const locale = i18n.language === 'pt-PT' ? 'pt-PT' : 'en';
+  const [activeTab, setActiveTab] = useState<ExpensesTab>('balances');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [settlingShareId, setSettlingShareId] = useState<string | null>(null);
@@ -103,12 +122,38 @@ export function ExpensesPage() {
     onSuccess: invalidateExpenseQueries,
   });
 
+  const balanceTotals = useMemo(() => {
+    let youOwe = 0;
+    let owedToYou = 0;
+    for (const balance of balances ?? []) {
+      if (balance.amount < 0) owedToYou += Math.abs(balance.amount);
+      else youOwe += balance.amount;
+    }
+    return { youOwe, owedToYou };
+  }, [balances]);
+
+  const historyGroups = useMemo(
+    () => groupExpensesByMonth(expenses ?? [], locale),
+    [expenses, locale],
+  );
+
   if (isLoading) return <PageLoading />;
 
-  const pendingCount = expenses?.filter((e) => hasPendingDebts(e)).length ?? 0;
+  const tabs = [
+    {
+      id: 'balances' as const,
+      label: t('expenses.balances'),
+      icon: <Wallet className="h-3.5 w-3.5" />,
+    },
+    {
+      id: 'history' as const,
+      label: t('expenses.history'),
+      icon: <History className="h-3.5 w-3.5" />,
+    },
+  ];
 
   return (
-    <PageShell width="wide">
+    <PageShell width="wide" className="pb-6">
       <PageHeader
         title={t('expenses.title')}
         subtitle={t('expenses.subtitle')}
@@ -119,159 +164,140 @@ export function ExpensesPage() {
                 <Plus className="mr-2 h-4 w-4" /> {t('expenses.expense')}
               </Button>
             </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{t('expenses.newExpense')}</DialogTitle>
-            </DialogHeader>
-            {createError && (
-              <p className="text-sm text-destructive">{createError}</p>
-            )}
-            <ExpenseSplitForm
-              currentUserId={userId ?? ''}
-              isPending={createMutation.isPending}
-              onSubmit={(data) =>
-                createMutation.mutate({
-                  ...data,
-                  date: new Date().toISOString(),
-                })
-              }
-            />
-          </DialogContent>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t('expenses.newExpense')}</DialogTitle>
+              </DialogHeader>
+              {createError && <p className="text-sm text-destructive">{createError}</p>}
+              <ExpenseSplitForm
+                currentUserId={userId ?? ''}
+                isPending={createMutation.isPending}
+                onSubmit={(data) =>
+                  createMutation.mutate({
+                    ...data,
+                    date: new Date().toISOString(),
+                  })
+                }
+              />
+            </DialogContent>
           </Dialog>
         }
       />
 
-      <Tabs defaultValue="history">
-        <TabsList>
-          <TabsTrigger value="history">{t('expenses.history')}</TabsTrigger>
-          <TabsTrigger value="balances">{t('expenses.balances')}</TabsTrigger>
-        </TabsList>
+      <div className={hubSectionClass}>
+        <SectionChipTabs tabs={tabs} activeId={activeTab} onChange={setActiveTab} />
 
-        <TabsContent value="history" className="mt-4">
-          {!expenses?.length ? (
-            <EmptyState
-              icon={Wallet}
-              title={t('expenses.noExpenses')}
-              description={t('expenses.noExpensesDescription')}
-            />
-          ) : (
-            <HubSection icon={Wallet} title={t('expenses.history')}>
-              {pendingCount > 0 && (
-                <p className="text-sm text-muted-foreground">
-                  {t('expenses.pendingCount', { count: pendingCount })}
-                </p>
-              )}
-              <div className={hubListClass}>
-                {expenses.map((expense) => (
-                  <ExpenseCard
-                    key={expense.id}
-                    expense={expense}
-                    currentUserId={userId ?? ''}
-                    compact
-                    canEditAmount={canManageExpense(expense, userId ?? '')}
-                    onSettleShare={(expenseId, shareId) =>
-                      settleShareMutation.mutate({ expenseId, shareId })
-                    }
-                    onDelete={(id) => deleteMutation.mutate(id)}
-                    deleting={deleteMutation.isPending && deletingExpenseId === expense.id}
-                    settlingShareId={
-                      settleShareMutation.isPending ? settlingShareId : null
-                    }
-                  />
-                ))}
+        {activeTab === 'balances' && (
+          <HubSection icon={Wallet} title={t('expenses.balances')}>
+            <HubHint>{t('expenses.balancesHint')}</HubHint>
+
+            {(balanceTotals.youOwe > 0 || balanceTotals.owedToYou > 0) && (
+              <div className="grid gap-2 sm:grid-cols-2">
+                <HubMetricCard
+                  label={t('expenses.totalYouOwe')}
+                  value={formatCurrency(balanceTotals.youOwe)}
+                  tone="negative"
+                />
+                <HubMetricCard
+                  label={t('expenses.totalOwedToYou')}
+                  value={formatCurrency(balanceTotals.owedToYou)}
+                  tone="positive"
+                />
               </div>
-            </HubSection>
-          )}
-        </TabsContent>
+            )}
 
-        <TabsContent value="balances" className="mt-4">
-          {loadingBalances ? (
-            <PageLoading className="min-h-[200px]" />
-          ) : !balances?.length ? (
-            <HubEmptyMessage>{t('expenses.allBalanced')}</HubEmptyMessage>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm text-muted-foreground">{t('expenses.balancesAutoHint')}</p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={settleAllMutation.isPending}
-                  onClick={() => {
-                    if (window.confirm(t('expenses.settleAllConfirm'))) {
-                      settleAllMutation.mutate();
-                    }
-                  }}
-                >
-                  <CheckCircle2 className="mr-1.5 h-4 w-4" />
-                  {t('expenses.settleAll')}
-                </Button>
+            {loadingBalances ? (
+              <PageLoading className="min-h-[200px]" />
+            ) : !balances?.length ? (
+              <HubEmptyMessage>{t('expenses.allBalanced')}</HubEmptyMessage>
+            ) : (
+              <div className={hubSectionClass}>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={settleAllMutation.isPending}
+                    onClick={() => {
+                      if (window.confirm(t('expenses.settleAllConfirm'))) {
+                        settleAllMutation.mutate();
+                      }
+                    }}
+                  >
+                    <CheckCircle2 className="mr-1.5 h-4 w-4" />
+                    {t('expenses.settleAll')}
+                  </Button>
+                </div>
+                <div className={hubListClass}>
+                  {balances.map((balance) => (
+                    <BalanceContactRow
+                      key={balance.userId}
+                      balance={balance}
+                      owesYouLabel={t('expenses.balanceOwesYou')}
+                      youOweLabel={t('expenses.balanceYouOwe')}
+                      settleLabel={t('expenses.settleWith')}
+                      formatCurrency={formatCurrency}
+                      isSettling={
+                        settleWithContactMutation.isPending &&
+                        settlingContactId === balance.userId
+                      }
+                      disabled={settleAllMutation.isPending}
+                      onSettle={() => {
+                        if (
+                          window.confirm(
+                            t('expenses.settleWithConfirm', { name: balance.user.name }),
+                          )
+                        ) {
+                          settleWithContactMutation.mutate(balance.userId);
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
               </div>
-              {balances.map((balance) => {
-                const owesYou = balance.amount < 0;
-                const amount = Math.abs(balance.amount);
-                const isSettling =
-                  settleWithContactMutation.isPending && settlingContactId === balance.userId;
+            )}
+          </HubSection>
+        )}
 
-                return (
-                  <Card key={balance.userId} className="rounded-xl">
-                    <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-                      <Avatar className="h-9 w-9">
-                        <AvatarImage src={balance.user.avatar ?? undefined} />
-                        <AvatarFallback>{getInitials(balance.user.name)}</AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium">{balance.user.name}</p>
-                        <p
-                          className={
-                            owesYou
-                              ? 'text-sm text-emerald-600 dark:text-emerald-400'
-                              : 'text-sm text-destructive'
-                          }
-                        >
-                          {owesYou ? t('expenses.balanceOwesYou') : t('expenses.balanceYouOwe')}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 flex-row items-center justify-between gap-2 sm:flex-col sm:items-end">
-                        <span
-                          className={`text-lg font-semibold tabular-nums ${
-                            owesYou
-                              ? 'text-emerald-600 dark:text-emerald-400'
-                              : 'text-destructive'
-                          }`}
-                        >
-                          {owesYou ? '+' : '-'}
-                          {formatCurrency(amount)}
-                        </span>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 text-xs"
-                          disabled={isSettling || settleAllMutation.isPending}
-                          onClick={() => {
-                            if (
-                              window.confirm(
-                                t('expenses.settleWithConfirm', { name: balance.user.name }),
-                              )
-                            ) {
-                              settleWithContactMutation.mutate(balance.userId);
-                            }
-                          }}
-                        >
-                          <CheckCircle2 className="mr-1 h-3 w-3" />
-                          {t('expenses.settleWith')}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
+        {activeTab === 'history' && (
+          <HubSection icon={History} title={t('expenses.history')}>
+            <HubHint>{t('expenses.historyHint')}</HubHint>
+
+            {!expenses?.length ? (
+              <EmptyState
+                icon={Wallet}
+                title={t('expenses.noExpenses')}
+                description={t('expenses.noExpensesDescription')}
+              />
+            ) : (
+              historyGroups.map(([monthLabel, monthExpenses]) => (
+                <div key={monthLabel} className={hubSectionClass}>
+                  <HubGroupLabel>{monthLabel}</HubGroupLabel>
+                  <div className={hubListClass}>
+                    {monthExpenses.map((expense) => (
+                      <ExpenseCard
+                        key={expense.id}
+                        expense={expense}
+                        currentUserId={userId ?? ''}
+                        variant="history"
+                        canEditAmount={canManageExpense(expense, userId ?? '')}
+                        onSettleShare={(expenseId, shareId) =>
+                          settleShareMutation.mutate({ expenseId, shareId })
+                        }
+                        onDelete={(id) => deleteMutation.mutate(id)}
+                        deleting={deleteMutation.isPending && deletingExpenseId === expense.id}
+                        settlingShareId={
+                          settleShareMutation.isPending ? settlingShareId : null
+                        }
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </HubSection>
+        )}
+      </div>
     </PageShell>
   );
 }

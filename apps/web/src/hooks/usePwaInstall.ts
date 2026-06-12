@@ -12,14 +12,21 @@ function isStandaloneMode() {
   );
 }
 
-function isIos() {
-  return /iphone|ipad|ipod/i.test(navigator.userAgent);
+function isAndroid() {
+  return /android/i.test(navigator.userAgent);
 }
+
+function isIos() {
+  return !isAndroid() && /iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+
+export type PwaInstallHint = 'ios' | 'android' | null;
 
 export function usePwaInstall() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(isStandaloneMode);
   const [isIosDevice] = useState(isIos);
+  const [isAndroidDevice] = useState(isAndroid);
 
   useEffect(() => {
     const onBeforeInstall = (e: Event) => {
@@ -51,7 +58,14 @@ export function usePwaInstall() {
   }, [deferredPrompt]);
 
   const canInstall = Boolean(deferredPrompt) && !isInstalled;
-  const showIosHint = isIosDevice && !isInstalled && !deferredPrompt;
+  const manualHint: PwaInstallHint =
+    !isInstalled && !deferredPrompt
+      ? isIosDevice
+        ? 'ios'
+        : isAndroidDevice
+          ? 'android'
+          : null
+      : null;
 
-  return { canInstall, isInstalled, showIosHint, install };
+  return { canInstall, isInstalled, manualHint, install };
 }

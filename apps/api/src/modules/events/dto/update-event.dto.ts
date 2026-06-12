@@ -4,6 +4,7 @@ import {
   IsDateString,
   IsEnum,
   IsIn,
+  IsNumber,
   IsOptional,
   IsString,
   MinLength,
@@ -38,10 +39,23 @@ export class UpdateEventDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ nullable: true })
   @IsOptional()
+  @ValidateIf((_, value) => value != null)
   @IsString()
-  location?: string;
+  location?: string | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @ValidateIf((_, value) => value != null)
+  @IsNumber()
+  locationLat?: number | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @ValidateIf((_, value) => value != null)
+  @IsNumber()
+  locationLng?: number | null;
 
   @ApiPropertyOptional()
   @IsOptional()

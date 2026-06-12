@@ -12,6 +12,7 @@ import { ExpensesModule } from './modules/expenses/expenses.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ShoppingListModule } from './modules/shopping-list/shopping-list.module';
+import { GeocodingModule } from './modules/geocoding/geocoding.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { ShoppingListModule } from './modules/shopping-list/shopping-list.module
     NotificationsModule,
     DashboardModule,
     ShoppingListModule,
+    GeocodingModule,
   ],
 })
 export class AppModule {}
