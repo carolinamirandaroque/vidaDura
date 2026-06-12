@@ -23,6 +23,7 @@ import type {
   UpdateExpenseDto,
   UpdateTaskDto,
   EventDetail,
+  EventInvite,
   GeocodingPlace,
   CreateEventTaskDto,
   CreateEventItemDto,
@@ -304,7 +305,7 @@ class ApiClient {
   };
 
   getPendingInvites = () => {
-    return this.request('/events/invites');
+    return this.request<EventInvite[]>('/events/invites');
   };
 
   respondToInvite = (eventId: string, status: 'accepted' | 'declined') => {

@@ -185,7 +185,11 @@ export function ExpensesPage() {
       />
 
       <div className={hubSectionClass}>
-        <SectionChipTabs tabs={tabs} activeId={activeTab} onChange={setActiveTab} />
+        <SectionChipTabs
+          tabs={tabs}
+          activeId={activeTab}
+          onChange={(id) => setActiveTab(id as ExpensesTab)}
+        />
 
         {activeTab === 'balances' && (
           <HubSection icon={Wallet} title={t('expenses.balances')}>

@@ -175,6 +175,10 @@ export interface EventParticipant {
   user?: User;
 }
 
+export interface EventInvite extends EventParticipant {
+  event: Event;
+}
+
 export interface CreateDeadlineDto {
   calendarId: string;
   title: string;

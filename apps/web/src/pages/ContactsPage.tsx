@@ -217,7 +217,11 @@ export function ContactsPage() {
           </section>
         )}
 
-        <SectionChipTabs tabs={tabs} activeId={activeTab} onChange={setActiveTab} />
+        <SectionChipTabs
+          tabs={tabs}
+          activeId={activeTab}
+          onChange={(id) => setActiveTab(id as ContactsTab)}
+        />
 
         {activeTab === 'contacts' && (
           <HubSection icon={Users} title={t('contacts.contactsTabShort', { count: contacts?.length ?? 0 })}>
