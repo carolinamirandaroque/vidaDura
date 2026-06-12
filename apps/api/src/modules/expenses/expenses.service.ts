@@ -1,12 +1,14 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import {
   aggregateDebtsFromExpenses,
+  buildEqualShares,
   calculateBalances,
   getPendingObligations,
   isExpenseFullySettled,
   validateShares,
 } from '@lifehub/utils';
 import { ExpensesRepository } from './expenses.repository';
+import { EventsRepository } from '../events/events.repository';
 import { ConnectionsRepository } from '../connections/connections.repository';
 import { NotificationsService } from '../notifications/notifications.service';
 import { WebsocketGateway } from '../../infrastructure/websocket/websocket.gateway';
@@ -21,6 +23,7 @@ type ExpenseRecord = NonNullable<Awaited<ReturnType<ExpensesRepository['findById
 export class ExpensesService {
   constructor(
     private expensesRepo: ExpensesRepository,
+    private eventsRepo: EventsRepository,
     private connectionsRepo: ConnectionsRepository,
     private notificationsService: NotificationsService,
     private wsGateway: WebsocketGateway,
@@ -77,6 +80,17 @@ export class ExpensesService {
         this.wsGateway.emitToUser(share.userId, 'expense_updated', mapped);
       }
     }
+    if (expense.eventId) {
+      const event = await this.eventsRepo.findById(expense.eventId);
+      if (event) {
+        const collaboratorIds = [
+          ...new Set([event.createdById, ...event.participants.map((p) => p.userId)]),
+        ].filter((id) => id !== actorId);
+        this.wsGateway.emitToUsers(collaboratorIds, 'event_updated', {
+          eventId: expense.eventId,
+        });
+      }
+    }
   }
 
   async findAll(userId: string) {
@@ -115,16 +129,43 @@ export class ExpensesService {
     return mapped;
   }
 
+  private async canUpdateExpense(userId: string, expense: ExpenseRecord) {
+    if (expense.creatorId === userId) return true;
+    if (expense.shares?.some((s) => s.userId === userId)) return true;
+    if (expense.eventId) {
+      return this.eventsRepo.isCollaborator(expense.eventId, userId);
+    }
+    return false;
+  }
+
   async update(userId: string, id: string, dto: UpdateExpenseDto) {
     const existing = await this.expensesRepo.findById(id);
     if (!existing) throw new NotFoundException('Expense not found');
-    if (existing.creatorId !== userId) throw new ForbiddenException('Only creator can update');
+    if (!(await this.canUpdateExpense(userId, existing))) {
+      throw new ForbiddenException('Not authorized to update');
+    }
 
-    if (dto.shares && dto.amount && !validateShares(dto.amount, dto.shares)) {
+    const payload: UpdateExpenseDto = { ...dto };
+    const amount = payload.amount ?? existing.amount;
+
+    if (payload.amount !== undefined && !payload.shares) {
+      const shareUserIds = existing.shares.map((share) => share.userId);
+      payload.shares = buildEqualShares(payload.amount, shareUserIds);
+    }
+
+    if (payload.shares && !validateShares(amount, payload.shares)) {
       throw new BadRequestException('Share amounts must equal total expense amount');
     }
 
-    const expense = await this.expensesRepo.update(id, dto);
+    const expense = await this.expensesRepo.update(id, payload);
+    if (payload.shares) {
+      await this.expensesRepo.syncExpenseSettlement(id);
+      const synced = await this.expensesRepo.findById(id);
+      if (!synced) throw new NotFoundException('Expense not found');
+      await this.notifyExpenseUpdate(synced, userId);
+      return this.mapExpense(synced);
+    }
+
     await this.notifyExpenseUpdate(expense, userId);
     return this.mapExpense(expense);
   }
@@ -214,7 +255,9 @@ export class ExpensesService {
   async remove(userId: string, id: string) {
     const existing = await this.expensesRepo.findById(id);
     if (!existing) throw new NotFoundException('Expense not found');
-    if (existing.creatorId !== userId) throw new ForbiddenException('Only creator can delete');
+    if (!(await this.canUpdateExpense(userId, existing))) {
+      throw new ForbiddenException('Not authorized to delete');
+    }
     await this.expensesRepo.delete(id);
   }
 

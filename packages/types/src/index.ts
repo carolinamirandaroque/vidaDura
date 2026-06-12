@@ -124,6 +124,7 @@ export interface Event {
   allDay: boolean;
   recurrence: RecurrenceType;
   recurrenceEnd: string | null;
+  recurrenceExceptions?: string[];
   deadlineStatus?: DeadlineStatus | null;
   completedAt?: string | null;
   createdById: string;
@@ -408,6 +409,7 @@ export interface ShoppingSection {
   ownerId: string;
   name: string;
   position: number;
+  hidden?: boolean;
   createdAt: string;
   updatedAt: string;
   isShared?: boolean;
@@ -422,6 +424,8 @@ export interface ShoppingListItem {
   eventItemId: string | null;
   eventId: string | null;
   eventTitle: string | null;
+  assigneeId?: string | null;
+  assignee?: User;
   title: string;
   done: boolean;
   boughtAt: string | null;
@@ -439,6 +443,7 @@ export interface CreateShoppingSectionDto {
 export interface UpdateShoppingSectionDto {
   name?: string;
   position?: number;
+  hidden?: boolean;
   memberIds?: string[];
 }
 
@@ -514,7 +519,9 @@ export type WsEvent =
   | 'notification'
   | 'event_updated'
   | 'event_deleted'
+  | 'event_removed'
   | 'task_updated'
+  | 'shopping_list_updated'
   | 'expense_updated'
   | 'connection_updated';
 

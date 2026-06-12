@@ -12,7 +12,12 @@ const sectionInclude = {
 
 const itemInclude = {
   section: { include: sectionInclude },
-  eventItem: { include: { event: { select: { id: true, title: true } } } },
+  eventItem: {
+    include: {
+      event: { select: { id: true, title: true } },
+      assignee: true,
+    },
+  },
 } as const;
 
 @Injectable()
@@ -27,13 +32,25 @@ export class ShoppingListRepository {
 
   private itemWhereForUser(userId: string, done?: boolean) {
     return {
-      OR: [
+      AND: [
         {
-          section: this.sectionWhereForUser(userId),
+          OR: [
+            { section: this.sectionWhereForUser(userId) },
+            { sectionId: null, ownerId: userId },
+          ],
         },
-        { sectionId: null, ownerId: userId },
+        {
+          NOT: {
+            eventItem: {
+              is: {
+                assigneeId: { not: null },
+                NOT: { assigneeId: userId },
+              },
+            },
+          },
+        },
+        ...(done !== undefined ? [{ done }] : []),
       ],
-      ...(done !== undefined ? { done } : {}),
     };
   }
 
@@ -81,6 +98,7 @@ export class ShoppingListRepository {
       data: {
         name: dto.name?.trim(),
         position: dto.position,
+        hidden: dto.hidden,
       },
       include: sectionInclude,
     });
@@ -215,6 +233,13 @@ export class ShoppingListRepository {
     });
   }
 
+  findByEventItemId(eventItemId: string) {
+    return this.prisma.shoppingListItem.findUnique({
+      where: { eventItemId },
+      include: itemInclude,
+    });
+  }
+
   createFromEventItem(
     ownerId: string,
     sectionId: string,
@@ -235,10 +260,57 @@ export class ShoppingListRepository {
     });
   }
 
+  async syncAssigneeFromEventItem(
+    eventItemId: string,
+    assigneeId: string | null | undefined,
+    fallbackOwnerId: string,
+    title: string,
+    done: boolean,
+  ) {
+    const listOwnerId = assigneeId != null && assigneeId !== '' ? assigneeId : fallbackOwnerId;
+    const section = await this.ensureEventsSection(listOwnerId);
+    const existing = await this.findByEventItemId(eventItemId);
+
+    if (existing) {
+      const movedSection = existing.sectionId !== section.id;
+      const maxPos = movedSection ? await this.getMaxPosition(section.id) : null;
+      return this.prisma.shoppingListItem.update({
+        where: { id: existing.id },
+        data: {
+          ownerId: listOwnerId,
+          sectionId: section.id,
+          title: title.trim(),
+          done,
+          boughtAt: done ? existing.boughtAt ?? new Date() : null,
+          ...(movedSection
+            ? { position: (maxPos!._max.position ?? -1) + 1 }
+            : {}),
+        },
+        include: itemInclude,
+      });
+    }
+
+    const maxPos = await this.getMaxPosition(section.id);
+    return this.createFromEventItem(
+      listOwnerId,
+      section.id,
+      eventItemId,
+      title,
+      (maxPos._max.position ?? -1) + 1,
+    );
+  }
+
   syncDoneFromEventItem(eventItemId: string, done: boolean) {
     return this.prisma.shoppingListItem.updateMany({
       where: { eventItemId },
       data: { done, boughtAt: done ? new Date() : null },
+    });
+  }
+
+  syncTitleFromEventItem(eventItemId: string, title: string) {
+    return this.prisma.shoppingListItem.updateMany({
+      where: { eventItemId },
+      data: { title: title.trim() },
     });
   }
 
@@ -249,7 +321,40 @@ export class ShoppingListRepository {
     });
   }
 
+  syncEventItemTitle(eventItemId: string, title: string) {
+    return this.prisma.eventItem.update({
+      where: { id: eventItemId },
+      data: { title: title.trim() },
+    });
+  }
+
   deleteByEventItemId(eventItemId: string) {
     return this.prisma.shoppingListItem.deleteMany({ where: { eventItemId } });
+  }
+
+  async repairMisplacedEventItems() {
+    const linked = await this.prisma.shoppingListItem.findMany({
+      where: { eventItemId: { not: null } },
+      include: {
+        eventItem: { select: { assigneeId: true, title: true, done: true } },
+      },
+    });
+
+    for (const row of linked) {
+      if (!row.eventItemId || !row.eventItem) continue;
+      const assigneeId = row.eventItem.assigneeId;
+      const targetOwnerId =
+        assigneeId != null && assigneeId !== '' ? assigneeId : row.ownerId;
+      const section = await this.ensureEventsSection(targetOwnerId);
+      if (row.ownerId !== targetOwnerId || row.sectionId !== section.id) {
+        await this.syncAssigneeFromEventItem(
+          row.eventItemId,
+          assigneeId,
+          row.ownerId,
+          row.eventItem.title ?? row.title,
+          row.eventItem.done ?? row.done,
+        );
+      }
+    }
   }
 }

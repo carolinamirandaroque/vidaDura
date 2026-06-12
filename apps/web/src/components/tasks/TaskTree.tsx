@@ -1,14 +1,16 @@
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ChevronRight,
   ChevronDown,
+  CalendarDays,
   MoreHorizontal,
-  Trash2,
-  Check,
   Plus,
 } from 'lucide-react';
 import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
   Button,
   cn,
   DropdownMenu,
@@ -16,10 +18,25 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Input,
 } from '@lifehub/ui';
 import type { Task, TaskStatus, User } from '@lifehub/types';
+import { getInitials, isEventRootTask } from '@lifehub/utils';
+import {
+  EditableLabel,
+  HubAddRow,
+  TaskStatusControl,
+  hubListClass,
+  hubRowClass,
+} from '@/components/hub';
+import {
+  reorderSiblingTree,
+  resolveSiblingParentId,
+  type TaskReorderUpdate,
+} from '@/lib/task-reorder';
 import { AssigneePicker } from './AssigneePicker';
+import { SortableTaskSiblings } from './SortableTaskSiblings';
+import { EntityAccessPanel } from '@/components/shared/EntityAccessPanel';
+import { buildTaskAccessEntries } from '@/lib/entity-access';
 
 interface CreateTaskPayload {
   title: string;
@@ -32,71 +49,45 @@ interface TaskTreeProps {
   people: User[];
   onCreate: (payload: CreateTaskPayload) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
+  onTitleChange: (id: string, title: string) => Promise<void>;
   onAssigneeChange: (id: string, assigneeId: string | null) => void;
   onDelete: (id: string) => void;
+  onReorder?: (updates: TaskReorderUpdate[]) => void;
   isCreating?: boolean;
+  isReordering?: boolean;
+  canEdit?: boolean;
+  deleteConfirm?: string;
+  addPlaceholder?: string;
 }
 
 function InlineAddRow({
   depth,
   placeholder,
-  people,
   onSubmit,
   isPending,
-  autoFocus,
 }: {
   depth: number;
   placeholder: string;
-  people: User[];
   onSubmit: (payload: CreateTaskPayload) => void;
   isPending?: boolean;
-  autoFocus?: boolean;
 }) {
   const [title, setTitle] = useState('');
-  const [assigneeId, setAssigneeId] = useState<string | undefined>();
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (autoFocus) inputRef.current?.focus();
-  }, [autoFocus]);
 
   const submit = () => {
     const trimmed = title.trim();
     if (!trimmed || isPending) return;
-    onSubmit({ title: trimmed, assigneeId });
+    onSubmit({ title: trimmed });
     setTitle('');
-    setAssigneeId(undefined);
   };
 
   return (
-    <div
-      className="flex items-center gap-2 py-1.5 pr-2"
-      style={{ paddingLeft: `${depth * 24 + 12}px` }}
-    >
-      <span className="w-4 shrink-0" />
-      <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
-      <Input
-        ref={inputRef}
+    <div style={{ marginLeft: depth > 0 ? `${depth * 12}px` : undefined }}>
+      <HubAddRow
         value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            submit();
-          }
-          if (e.key === 'Escape') {
-            setTitle('');
-            inputRef.current?.blur();
-          }
-        }}
+        onChange={setTitle}
         placeholder={placeholder}
-        disabled={isPending}
-        className="h-8 flex-1 border-none bg-transparent px-0 shadow-none focus-visible:ring-0"
-      />
-      <AssigneePicker
-        people={people}
-        value={assigneeId}
-        onChange={(id) => setAssigneeId(id ?? undefined)}
+        isPending={isPending}
+        onSubmit={submit}
       />
     </div>
   );
@@ -107,18 +98,30 @@ function TaskNode({
   people,
   onCreate,
   onStatusChange,
+  onTitleChange,
   onAssigneeChange,
   onDelete,
+  onReorder,
   isCreating,
+  isReordering,
+  canEdit = true,
+  deleteConfirm,
+  dragHandle,
   depth = 0,
 }: {
   task: Task;
   people: User[];
   onCreate: (payload: CreateTaskPayload) => void;
   onStatusChange: (id: string, status: TaskStatus) => void;
+  onTitleChange: (id: string, title: string) => Promise<void>;
   onAssigneeChange: (id: string, assigneeId: string | null) => void;
   onDelete: (id: string) => void;
+  onReorder?: (updates: TaskReorderUpdate[]) => void;
   isCreating?: boolean;
+  isReordering?: boolean;
+  canEdit?: boolean;
+  deleteConfirm?: string;
+  dragHandle?: React.ReactNode;
   depth?: number;
 }) {
   const { t } = useTranslation();
@@ -127,9 +130,11 @@ function TaskNode({
   const hasChildren = task.children && task.children.length > 0;
   const childCount = task.children?.length ?? 0;
   const isDone = task.status === 'done';
+  const isEventRoot = isEventRootTask(task);
+  const canDrag = canEdit && !!onReorder && !isReordering;
 
-  const toggleComplete = () => {
-    onStatusChange(task.id, isDone ? 'todo' : 'done');
+  const handleSiblingReorder = (updates: TaskReorderUpdate[]) => {
+    onReorder?.(updates);
   };
 
   const handleCreateSubtask = (payload: CreateTaskPayload) => {
@@ -138,12 +143,88 @@ function TaskNode({
     setExpanded(true);
   };
 
+  const renderChild = (child: Task, childDragHandle: React.ReactNode | null) => (
+    <TaskNode
+      key={child.id}
+      task={child}
+      people={people}
+      onCreate={onCreate}
+      onStatusChange={onStatusChange}
+      onTitleChange={onTitleChange}
+      onAssigneeChange={onAssigneeChange}
+      onDelete={onDelete}
+      onReorder={onReorder}
+      isCreating={isCreating}
+      isReordering={isReordering}
+      canEdit={canEdit}
+      deleteConfirm={deleteConfirm}
+      dragHandle={childDragHandle}
+      depth={depth + 1}
+    />
+  );
+
+  if (isEventRoot) {
+    return (
+      <div>
+        <div
+          className={cn(hubRowClass, 'bg-muted/40')}
+          style={{ marginLeft: depth > 0 ? `${depth * 12}px` : undefined }}
+        >
+          {dragHandle}
+          <button
+            type="button"
+            onClick={() => setExpanded(!expanded)}
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded hover:bg-accent"
+          >
+            {expanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
+          </button>
+
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-medium">{task.title}</p>
+          </div>
+
+          {!expanded && childCount > 0 && (
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {t('tasks.subtaskCount', { count: childCount })}
+            </span>
+          )}
+        </div>
+
+        {expanded && hasChildren && (
+          <div className={hubListClass}>
+            <SortableTaskSiblings
+              tasks={task.children ?? []}
+              parentTaskId={task.id}
+              canDrag={canDrag}
+              onReorder={handleSiblingReorder}
+              renderTask={renderChild}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const handleDelete = () => {
+    const message =
+      childCount > 0
+        ? t('tasks.deleteConfirmWithSubtasks', { title: task.title, count: childCount })
+        : deleteConfirm;
+    if (message && !window.confirm(message)) return;
+    onDelete(task.id);
+  };
+
   return (
     <div>
       <div
-        className="group flex items-center gap-1.5 rounded-md py-1.5 pr-2 hover:bg-accent/40"
-        style={{ paddingLeft: `${depth * 24 + 8}px` }}
+        className={cn(hubRowClass, 'group')}
+        style={{ marginLeft: depth > 0 ? `${depth * 12}px` : undefined }}
       >
+        {dragHandle}
         <button
           type="button"
           onClick={() => setExpanded(!expanded)}
@@ -156,30 +237,26 @@ function TaskNode({
           )}
         </button>
 
-        <button
-          type="button"
-          onClick={toggleComplete}
-          className={cn(
-            'flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border-2 transition-colors',
-            isDone
-              ? 'border-emerald-500 bg-emerald-500 text-white'
-              : 'border-muted-foreground/50 hover:border-emerald-500',
-          )}
-        >
-          {isDone && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
-        </button>
+        <TaskStatusControl
+          status={task.status}
+          disabled={!canEdit}
+          onChange={(status) => onStatusChange(task.id, status)}
+        />
 
-        <span
-          className={cn(
-            'min-w-0 flex-1 truncate text-sm',
-            isDone && 'text-muted-foreground line-through',
+        <div className="min-w-0 flex-1">
+          <EditableLabel
+            value={task.title}
+            canEdit={canEdit}
+            done={isDone}
+            onSave={(title) => onTitleChange(task.id, title)}
+          />
+          {task.eventTitle && depth === 0 && !isEventRoot && (
+            <span className="mt-0.5 inline-flex max-w-full items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+              <CalendarDays className="h-3 w-3 shrink-0" />
+              <span className="truncate">{task.eventTitle}</span>
+            </span>
           )}
-        >
-          {task.title}
-          {task.eventTitle && (
-            <span className="ml-1.5 text-xs text-muted-foreground">· {task.eventTitle}</span>
-          )}
-        </span>
+        </div>
 
         {!expanded && childCount > 0 && (
           <span className="shrink-0 text-xs text-muted-foreground">
@@ -187,74 +264,82 @@ function TaskNode({
           </span>
         )}
 
-        <AssigneePicker
-          people={people}
-          value={task.assigneeId}
-          onChange={(assigneeId) => onAssigneeChange(task.id, assigneeId)}
-          className="opacity-60 group-hover:opacity-100"
-        />
+        {canEdit ? (
+          <AssigneePicker
+            people={people}
+            value={task.assigneeId}
+            onChange={(assigneeId) => onAssigneeChange(task.id, assigneeId)}
+            className="opacity-60 group-hover:opacity-100"
+          />
+        ) : (
+          task.assignee && (
+            <Avatar className="h-6 w-6 shrink-0">
+              <AvatarImage src={task.assignee.avatar ?? undefined} />
+              <AvatarFallback className="text-[8px]">{getInitials(task.assignee.name)}</AvatarFallback>
+            </Avatar>
+          )
+        )}
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => { setShowSubtaskInput(true); setExpanded(true); }}>
-              <Plus className="mr-2 h-4 w-4" />
-              {t('tasks.addSubtask')}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => onDelete(task.id)} className="text-destructive">
-              <Trash2 className="mr-2 h-4 w-4" />
-              {t('tasks.delete')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {canEdit && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => { setShowSubtaskInput(true); setExpanded(true); }}>
+                <Plus className="mr-2 h-4 w-4" />
+                {t('tasks.addSubtask')}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleDelete} className="text-destructive">
+                {t('tasks.delete')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
-      {expanded && (
-        <div>
-          {hasChildren &&
-            (task.children ?? []).map((child) => (
-              <TaskNode
-                key={child.id}
-                task={child}
-                people={people}
-                onCreate={onCreate}
-                onStatusChange={onStatusChange}
-                onAssigneeChange={onAssigneeChange}
-                onDelete={onDelete}
-                isCreating={isCreating}
-                depth={depth + 1}
-              />
-            ))}
+      {expanded && !task.eventId && buildTaskAccessEntries(task, people).length > 1 && (
+        <div style={{ marginLeft: depth > 0 ? `${depth * 12 + 28}px` : '28px' }}>
+          <EntityAccessPanel
+            entries={buildTaskAccessEntries(task, people)}
+            className="mb-2 rounded-md border bg-muted/20 p-2"
+          />
+        </div>
+      )}
 
-          {showSubtaskInput ? (
+      {expanded && (
+        <div className={hubListClass}>
+          {hasChildren && (
+            <SortableTaskSiblings
+              tasks={task.children ?? []}
+              parentTaskId={task.id}
+              canDrag={canDrag}
+              onReorder={handleSiblingReorder}
+              renderTask={renderChild}
+            />
+          )}
+
+          {canEdit && (showSubtaskInput ? (
             <InlineAddRow
               depth={depth + 1}
               placeholder={t('tasks.addSubtaskPlaceholder')}
-              people={people}
               onSubmit={handleCreateSubtask}
               isPending={isCreating}
-              autoFocus
             />
           ) : (
             <button
               type="button"
               onClick={() => setShowSubtaskInput(true)}
               className="flex w-full items-center gap-2 py-1 text-xs text-muted-foreground hover:text-foreground"
-              style={{ paddingLeft: `${(depth + 1) * 24 + 36}px` }}
+              style={{ paddingLeft: `${(depth + 1) * 12 + 12}px` }}
             >
               <Plus className="h-3 w-3" />
               {t('tasks.addSubtask')}
             </button>
-          )}
+          ))}
         </div>
       )}
     </div>
@@ -266,36 +351,81 @@ export function TaskTree({
   people,
   onCreate,
   onStatusChange,
+  onTitleChange,
   onAssigneeChange,
   onDelete,
+  onReorder,
   isCreating,
+  isReordering,
+  canEdit = true,
+  deleteConfirm,
+  addPlaceholder,
 }: TaskTreeProps) {
   const { t } = useTranslation();
+  const [newTitle, setNewTitle] = useState('');
+  const [localTasks, setLocalTasks] = useState(tasks);
+
+  useEffect(() => {
+    setLocalTasks(tasks);
+  }, [tasks]);
+
+  const handleCreateRoot = () => {
+    const trimmed = newTitle.trim();
+    if (!trimmed || isCreating) return;
+    onCreate({ title: trimmed });
+    setNewTitle('');
+  };
+
+  const handleReorder = (updates: TaskReorderUpdate[]) => {
+    const parentTaskId = updates[0]?.parentTaskId ?? null;
+    const orderedIds = [...updates]
+      .sort((a, b) => a.position - b.position)
+      .map((update) => update.id);
+    setLocalTasks((current) => reorderSiblingTree(current, parentTaskId, orderedIds));
+    onReorder?.(updates);
+  };
+
+  const canDrag = canEdit && !!onReorder && !isReordering;
+
+  const renderRootTask = (task: Task, dragHandle: React.ReactNode | null) => (
+    <TaskNode
+      task={task}
+      people={people}
+      onCreate={onCreate}
+      onStatusChange={onStatusChange}
+      onTitleChange={onTitleChange}
+      onAssigneeChange={onAssigneeChange}
+      onDelete={onDelete}
+      onReorder={handleReorder}
+      isCreating={isCreating}
+      isReordering={isReordering}
+      canEdit={canEdit}
+      deleteConfirm={deleteConfirm}
+      dragHandle={dragHandle}
+    />
+  );
 
   return (
-    <div className="divide-y rounded-lg border bg-card">
-      <InlineAddRow
-        depth={0}
-        placeholder={t('tasks.addTaskPlaceholder')}
-        people={people}
-        onSubmit={onCreate}
-        isPending={isCreating}
-      />
+    <div className="space-y-2">
+      {canEdit && (
+        <HubAddRow
+          value={newTitle}
+          onChange={setNewTitle}
+          placeholder={addPlaceholder ?? t('tasks.addTaskPlaceholder')}
+          isPending={isCreating}
+          onSubmit={handleCreateRoot}
+        />
+      )}
 
-      {tasks.length > 0 && (
-        <div className="py-1">
-          {tasks.map((task) => (
-            <TaskNode
-              key={task.id}
-              task={task}
-              people={people}
-              onCreate={onCreate}
-              onStatusChange={onStatusChange}
-              onAssigneeChange={onAssigneeChange}
-              onDelete={onDelete}
-              isCreating={isCreating}
-            />
-          ))}
+      {localTasks.length > 0 && (
+        <div className={hubListClass}>
+          <SortableTaskSiblings
+            tasks={localTasks}
+            parentTaskId={resolveSiblingParentId(localTasks)}
+            canDrag={canDrag}
+            onReorder={handleReorder}
+            renderTask={renderRootTask}
+          />
         </div>
       )}
     </div>

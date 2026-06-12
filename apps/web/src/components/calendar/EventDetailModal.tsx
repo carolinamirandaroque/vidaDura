@@ -7,7 +7,6 @@ import {
   CheckSquare,
   Wallet,
   ShoppingBag,
-  Plus,
   Briefcase,
   Landmark,
   PartyPopper,
@@ -21,12 +20,14 @@ import {
   Trash2,
   Bell,
   CheckCircle2,
+  LogOut,
 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  VisuallyHidden,
   Badge,
   Button,
   Input,
@@ -36,23 +37,42 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Avatar,
-  AvatarImage,
-  AvatarFallback,
-  cn,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from '@lifehub/ui';
 import { api } from '@/lib/api';
+import { EntityAccessPanel } from '@/components/shared/EntityAccessPanel';
+import { buildEventAccessEntries } from '@/lib/entity-access';
 import { ExpenseSplitForm } from '@/components/expenses/ExpenseSplitForm';
 import { ExpenseCard } from '@/components/expenses/ExpenseCard';
 import { useFormatters } from '@/hooks/useFormatters';
 import { useAuthStore } from '@/stores/auth.store';
-import { getDeadlineColor, getInitials, isDeadline, isDeadlineOverdue } from '@lifehub/utils';
+import { getDeadlineColor, isDeadline, isDeadlineOverdue } from '@lifehub/utils';
 import { resolveDueDate, resolveEventDates, toDatetimeLocalValue } from '@/lib/calendar';
-import { getEventTypeColor } from '@/lib/event-types';
+import { HUB_EVENT_TYPES, getEventTypeColor } from '@/lib/event-types';
 import { ContactMultiSelect } from '@/components/shared/ContactMultiSelect';
 import { DatePickerField } from '@/components/shared/DatePickerField';
 import { DateTimePickerField } from '@/components/shared/DateTimePickerField';
-import type { HubEventType, EventItemType, RecurrenceType, Task, User, EventDetail } from '@lifehub/types';
+import {
+  HubSection,
+  HubAddRow,
+  ShoppingHubRow,
+  hubEmptyClass,
+  hubListClass,
+} from '@/components/hub';
+import { TaskTree } from '@/components/tasks/TaskTree';
+import { AssigneePicker } from '@/components/tasks/AssigneePicker';
+import type {
+  HubEventType,
+  RecurrenceType,
+  TaskStatus,
+  User,
+  EventDetail,
+  ShoppingListItem,
+} from '@lifehub/types';
 
 const typeIcons: Record<HubEventType, typeof CalendarDays> = {
   social: Users,
@@ -67,8 +87,6 @@ const typeIcons: Record<HubEventType, typeof CalendarDays> = {
   other: CalendarDays,
 };
 
-const UNASSIGNED = '__none__';
-
 function getEventPeople(detail: EventDetail, currentUser?: User | null): User[] {
   const map = new Map<string, User>();
   if (detail.createdBy) map.set(detail.createdBy.id, detail.createdBy);
@@ -79,116 +97,28 @@ function getEventPeople(detail: EventDetail, currentUser?: User | null): User[] 
   return Array.from(map.values());
 }
 
-function AssigneeSelect({
-  people,
-  value,
-  onChange,
-  className,
-}: {
-  people: User[];
-  value?: string;
-  onChange: (id: string | undefined) => void;
-  className?: string;
-}) {
-  const { t } = useTranslation();
-  return (
-    <Select
-      value={value ?? UNASSIGNED}
-      onValueChange={(v) => onChange(v === UNASSIGNED ? undefined : v)}
-    >
-      <SelectTrigger className={cn('h-9', className)}>
-        <SelectValue placeholder={t('eventHub.assignTo')} />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={UNASSIGNED}>{t('eventHub.unassigned')}</SelectItem>
-        {people.map((person) => (
-          <SelectItem key={person.id} value={person.id}>
-            <span className="flex items-center gap-2">
-              <Avatar className="h-5 w-5">
-                <AvatarImage src={person.avatar ?? undefined} />
-                <AvatarFallback className="text-[8px]">{getInitials(person.name)}</AvatarFallback>
-              </Avatar>
-              {person.name}
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-function SectionHeader({
-  icon: Icon,
-  title,
-  count,
-}: {
-  icon: typeof Wallet;
-  title: string;
-  count?: string;
-}) {
-  return (
-    <div className="flex items-center gap-2 border-b pb-2">
-      <Icon className="h-4 w-4 text-muted-foreground" />
-      <h3 className="text-sm font-semibold">{title}</h3>
-      {count && <span className="text-xs text-muted-foreground">({count})</span>}
-    </div>
-  );
-}
-
-function TaskRow({ task, depth = 0 }: { task: Task; depth?: number }) {
-  const { t } = useTranslation();
-  return (
-    <>
-      <div
-        className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm"
-        style={{ paddingLeft: `${depth * 16 + 8}px` }}
-      >
-        <span
-          className={cn(
-            'h-2 w-2 shrink-0 rounded-full',
-            task.status === 'done' && 'bg-green-500',
-            task.status === 'doing' && 'bg-yellow-500',
-            task.status === 'todo' && 'bg-muted-foreground',
-          )}
-        />
-        <span className={cn('flex-1', task.status === 'done' && 'line-through opacity-60')}>
-          {task.title}
-        </span>
-        {task.assignee && (
-          <Avatar className="h-5 w-5">
-            <AvatarImage src={task.assignee.avatar ?? undefined} />
-            <AvatarFallback className="text-[8px]">{getInitials(task.assignee.name)}</AvatarFallback>
-          </Avatar>
-        )}
-        <Badge variant="outline" className="text-[10px]">
-          {t(`tasks.status.${task.status}`)}
-        </Badge>
-      </div>
-      {task.children?.map((child) => (
-        <TaskRow key={child.id} task={child} depth={depth + 1} />
-      ))}
-    </>
-  );
-}
-
 interface EventDetailModalProps {
   eventId: string | null;
+  occurrenceDate?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailModalProps) {
+export function EventDetailModal({
+  eventId,
+  occurrenceDate,
+  open,
+  onOpenChange,
+}: EventDetailModalProps) {
   const { t } = useTranslation();
   const { formatDateTime, formatTime, formatCurrency } = useFormatters();
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
 
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskAssigneeId, setNewTaskAssigneeId] = useState<string | undefined>();
   const [newItemTitle, setNewItemTitle] = useState('');
-  const [newItemType, setNewItemType] = useState<EventItemType>('buy');
   const [newItemAssigneeId, setNewItemAssigneeId] = useState<string | undefined>();
   const [inviteIds, setInviteIds] = useState<string[]>([]);
+  const [editType, setEditType] = useState<HubEventType>('social');
   const [editTitle, setEditTitle] = useState('');
   const [editStart, setEditStart] = useState('');
   const [editEnd, setEditEnd] = useState('');
@@ -215,7 +145,19 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
   );
 
   const isCreator = detail?.createdById === currentUser?.id;
-
+  const isParticipant = useMemo(
+    () => detail?.participants?.some((p) => p.userId === currentUser?.id) ?? false,
+    [detail, currentUser?.id],
+  );
+  const isCollaborator = useMemo(() => {
+    if (!detail || !currentUser?.id) return false;
+    return detail.createdById === currentUser.id || isParticipant;
+  }, [detail, currentUser?.id, isParticipant]);
+  const canLeaveEvent = isCreator || isParticipant;
+  const accessEntries = useMemo(
+    () => (detail ? buildEventAccessEntries(detail) : []),
+    [detail],
+  );
   useEffect(() => {
     if (detail?.participants) {
       setInviteIds(detail.participants.map((p) => p.userId));
@@ -224,6 +166,7 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
 
   useEffect(() => {
     if (detail) {
+      setEditType(detail.type);
       setEditTitle(detail.title);
       setEditStart(toDatetimeLocalValue(detail.startDate));
       setEditEnd(toDatetimeLocalValue(detail.endDate));
@@ -234,11 +177,21 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
       setEditDueDate(detail.endDate.slice(0, 10));
       setDetailsError(null);
     }
-  }, [detail?.id, detail?.title, detail?.startDate, detail?.endDate, detail?.recurrence, detail?.recurrenceEnd]);
+  }, [
+    detail?.id,
+    detail?.type,
+    detail?.title,
+    detail?.startDate,
+    detail?.endDate,
+    detail?.recurrence,
+    detail?.recurrenceEnd,
+  ]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['event-detail', eventId] });
     queryClient.invalidateQueries({ queryKey: ['events'] });
+    queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    queryClient.invalidateQueries({ queryKey: ['shopping-list'] });
     queryClient.invalidateQueries({ queryKey: ['expenses'] });
     queryClient.invalidateQueries({ queryKey: ['debts'] });
     queryClient.invalidateQueries({ queryKey: ['dashboard'] });
@@ -246,6 +199,15 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
 
   const [settlingShareId, setSettlingShareId] = useState<string | null>(null);
   const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null);
+  const [updatingExpenseId, setUpdatingExpenseId] = useState<string | null>(null);
+
+  const updateExpenseMutation = useMutation({
+    mutationFn: ({ expenseId, amount }: { expenseId: string; amount: number }) =>
+      api.updateExpense(expenseId, { amount }),
+    onMutate: ({ expenseId }) => setUpdatingExpenseId(expenseId),
+    onSettled: () => setUpdatingExpenseId(null),
+    onSuccess: invalidate,
+  });
 
   const deleteExpenseMutation = useMutation({
     mutationFn: api.deleteExpense,
@@ -277,20 +239,15 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
   });
 
   const addTaskMutation = useMutation({
-    mutationFn: (payload: { title: string; assigneeId?: string }) =>
+    mutationFn: (payload: { title: string; parentTaskId?: string }) =>
       api.addEventTask(eventId!, payload),
-    onSuccess: () => {
-      setNewTaskTitle('');
-      setNewTaskAssigneeId(undefined);
-      invalidate();
-    },
+    onSuccess: invalidate,
   });
 
   const addItemMutation = useMutation({
     mutationFn: () =>
       api.addEventItem(eventId!, {
         title: newItemTitle,
-        type: newItemType,
         assigneeId: newItemAssigneeId,
       }),
     onSuccess: () => {
@@ -307,15 +264,89 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
   });
 
   const assignItemMutation = useMutation({
-    mutationFn: ({ itemId, assigneeId }: { itemId: string; assigneeId?: string }) =>
+    mutationFn: ({ itemId, assigneeId }: { itemId: string; assigneeId?: string | null }) =>
       api.updateEventItem(eventId!, itemId, { assigneeId: assigneeId ?? null }),
+    onSuccess: async (_, { assigneeId, itemId }) => {
+      if (assigneeId && assigneeId !== currentUser?.id) {
+        queryClient.setQueryData<ShoppingListItem[]>(
+          ['shopping-list', currentUser?.id],
+          (old) => old?.filter((row) => row.eventItemId !== itemId) ?? [],
+        );
+      }
+      await queryClient.refetchQueries({ queryKey: ['shopping-list'] });
+      invalidate();
+    },
+  });
+
+  const updateTaskMutation = useMutation({
+    mutationFn: ({
+      taskId,
+      title,
+      status,
+      assigneeId,
+    }: {
+      taskId: string;
+      title?: string;
+      status?: TaskStatus;
+      assigneeId?: string | null;
+    }) => api.updateEventTask(eventId!, taskId, { title, status, assigneeId }),
+    onSuccess: async (_, vars) => {
+      if (vars.assigneeId !== undefined) {
+        await queryClient.refetchQueries({ queryKey: ['tasks'] });
+      }
+      invalidate();
+    },
+  });
+
+  const deleteTaskMutation = useMutation({
+    mutationFn: (taskId: string) => api.deleteEventTask(eventId!, taskId),
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: ['tasks'] });
+      invalidate();
+    },
+  });
+
+  const reorderTasksMutation = useMutation({
+    mutationFn: api.reorderTasks,
+    onSuccess: invalidate,
+    onError: invalidate,
+  });
+
+  const updateItemMutation = useMutation({
+    mutationFn: ({
+      itemId,
+      title,
+      done,
+      assigneeId,
+    }: {
+      itemId: string;
+      title?: string;
+      done?: boolean;
+      assigneeId?: string | null;
+    }) => api.updateEventItem(eventId!, itemId, { title, done, assigneeId }),
     onSuccess: invalidate,
   });
 
-  const inviteMutation = useMutation({
-    mutationFn: () => api.updateEvent(eventId!, { participantIds: inviteIds }),
+  const deleteItemMutation = useMutation({
+    mutationFn: (itemId: string) => api.deleteEventItem(eventId!, itemId),
     onSuccess: invalidate,
   });
+
+  const [removingParticipantId, setRemovingParticipantId] = useState<string | null>(null);
+
+  const inviteMutation = useMutation({
+    mutationFn: (participantIds: string[]) =>
+      api.updateEvent(eventId!, { participantIds }),
+    onSuccess: invalidate,
+  });
+
+  const handleRemoveParticipant = (userId: string, name: string) => {
+    if (!window.confirm(t('eventHub.removeParticipantConfirm', { name }))) return;
+    const next = inviteIds.filter((id) => id !== userId);
+    setInviteIds(next);
+    setRemovingParticipantId(userId);
+    inviteMutation.mutate(next, { onSettled: () => setRemovingParticipantId(null) });
+  };
 
   const completeDeadlineMutation = useMutation({
     mutationFn: () => api.completeDeadline(eventId!),
@@ -335,6 +366,7 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
         : resolveEventDates(editStart, editEnd);
       return api.updateEvent(eventId!, {
         title,
+        type: isDeadlineEvent ? undefined : editType,
         startDate: dates.startDate,
         endDate: dates.endDate,
         recurrence: editRecurrence,
@@ -353,31 +385,72 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
     onError: (err: Error) => setDetailsError(err.message),
   });
 
-  const deleteMutation = useMutation({
+  const closeAndRefreshEvents = () => {
+    queryClient.invalidateQueries({ queryKey: ['events'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    onOpenChange(false);
+  };
+
+  const deleteEventMutation = useMutation({
     mutationFn: () => api.deleteEvent(eventId!),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['events'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      onOpenChange(false);
-    },
+    onSuccess: closeAndRefreshEvents,
+  });
+
+  const deleteOccurrenceMutation = useMutation({
+    mutationFn: (date: string) => api.deleteEventOccurrence(eventId!, date),
+    onSuccess: closeAndRefreshEvents,
+  });
+
+  const leaveEventMutation = useMutation({
+    mutationFn: () => api.leaveEvent(eventId!),
+    onSuccess: closeAndRefreshEvents,
   });
 
   if (!eventId) return null;
 
   const isDeadlineEvent = detail ? isDeadline(detail) : false;
-  const Icon = detail ? (isDeadlineEvent ? Bell : typeIcons[detail.type]) : CalendarDays;
+  const displayType = isCollaborator && !isDeadlineEvent ? editType : detail?.type ?? 'social';
+  const Icon = detail ? (isDeadlineEvent ? Bell : typeIcons[displayType]) : CalendarDays;
   const color = detail
     ? isDeadlineEvent
       ? getDeadlineColor(detail)
-      : getEventTypeColor(detail.type)
+      : getEventTypeColor(displayType)
     : '#f97316';
   const overdue = detail && isDeadlineOverdue(detail);
+  const resolvedOccurrenceDate = occurrenceDate ?? detail?.endDate ?? null;
+  const occurrenceLabel = resolvedOccurrenceDate
+    ? formatDateTime(resolvedOccurrenceDate).split(',')[0]
+    : '';
+
+  const confirmDeleteSeries = () => {
+    if (!detail) return;
+    const hasOthers = detail.participants?.some((p) => p.userId !== currentUser?.id) ?? false;
+    const message = isDeadlineEvent
+      ? t('eventHub.deleteDeadlineSeriesConfirm', { title: detail.title })
+      : t(
+          hasOthers ? 'eventHub.deleteEventConfirmWithOthers' : 'eventHub.deleteEventConfirm',
+          {
+            title: detail.title,
+            tasks: detail.stats.tasksTotal,
+            items: detail.stats.itemsTotal,
+            expenses: detail.expenses.length,
+          },
+        );
+    if (window.confirm(message)) {
+      deleteEventMutation.mutate();
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         {isLoading || !detail ? (
-          <div className="py-12 text-center text-muted-foreground">{t('common.loading')}</div>
+          <>
+            <VisuallyHidden>
+              <DialogTitle>{t('common.loading')}</DialogTitle>
+            </VisuallyHidden>
+            <div className="py-12 text-center text-muted-foreground">{t('common.loading')}</div>
+          </>
         ) : (
           <div className="space-y-5">
             <DialogHeader>
@@ -389,7 +462,7 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
                   <Icon className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  {isCreator ? (
+                  {isCollaborator ? (
                     <DialogTitle className="text-left text-xl">
                       {isDeadlineEvent ? t('eventHub.editDeadline') : t('eventHub.editEvent')}
                     </DialogTitle>
@@ -425,31 +498,120 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
                     </>
                   )}
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  disabled={deleteMutation.isPending}
-                  title={t('eventHub.removeFromCalendar')}
-                  onClick={() => {
-                    const hasOthers =
-                      detail.createdById !== currentUser?.id ||
-                      (detail.participants?.some((p) => p.userId !== currentUser?.id) ?? false);
-                    const message = hasOthers
-                      ? `${t('eventHub.deleteConfirm')}\n\n${t('eventHub.deleteConfirmOthers')}`
-                      : t('eventHub.deleteConfirm');
-                    if (window.confirm(message)) {
-                      deleteMutation.mutate();
-                    }
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <div className="flex shrink-0 items-center gap-1">
+                  {canLeaveEvent && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-foreground"
+                      disabled={leaveEventMutation.isPending}
+                      title={t('eventHub.leaveEvent')}
+                      onClick={() => {
+                        const hasOtherParticipants =
+                          (detail.participants?.some((p) => p.userId !== currentUser?.id) ??
+                            false);
+                        const message =
+                          isCreator && hasOtherParticipants
+                            ? t('eventHub.leaveEventConfirmCreator')
+                            : t('eventHub.leaveEventConfirm');
+                        if (window.confirm(message)) {
+                          leaveEventMutation.mutate();
+                        }
+                      }}
+                    >
+                      <LogOut className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {isCollaborator && isDeadlineEvent && detail.recurrence !== 'none' ? (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          disabled={
+                            deleteEventMutation.isPending || deleteOccurrenceMutation.isPending
+                          }
+                          title={t('eventHub.deleteDeadline')}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          disabled={!resolvedOccurrenceDate}
+                          onClick={() => {
+                            if (!resolvedOccurrenceDate) return;
+                            const message = t('eventHub.deleteDeadlineOccurrenceConfirm', {
+                              title: detail.title,
+                              date: occurrenceLabel,
+                            });
+                            if (window.confirm(message)) {
+                              deleteOccurrenceMutation.mutate(resolvedOccurrenceDate);
+                            }
+                          }}
+                        >
+                          {t('eventHub.deleteDeadlineOccurrence', { date: occurrenceLabel })}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={confirmDeleteSeries}
+                        >
+                          {t('eventHub.deleteDeadlineSeries')}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  ) : (
+                    isCollaborator && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        disabled={deleteEventMutation.isPending}
+                        title={t(isDeadlineEvent ? 'eventHub.deleteDeadline' : 'eventHub.deleteEvent')}
+                        onClick={confirmDeleteSeries}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )
+                  )}
+                </div>
               </div>
             </DialogHeader>
 
-            {isCreator && (
+            {accessEntries.length > 0 && !isCreator && (
+              <EntityAccessPanel entries={accessEntries} />
+            )}
+
+            {isCollaborator && (
               <div className="space-y-3 rounded-lg border p-3">
+                {!isDeadlineEvent && (
+                  <div className="space-y-2">
+                    <Label>{t('eventHub.type')}</Label>
+                    <Select
+                      value={editType}
+                      onValueChange={(v) => setEditType(v as HubEventType)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {HUB_EVENT_TYPES.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            <span className="flex items-center gap-2">
+                              <span
+                                className="h-2.5 w-2.5 shrink-0 rounded-full"
+                                style={{ backgroundColor: getEventTypeColor(type) }}
+                              />
+                              {t(`eventHub.types.${type}`)}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label>{t('common.title')} *</Label>
                   <Input
@@ -526,17 +688,6 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
               </div>
             )}
 
-            {!isCreator && isDeadlineEvent && detail.deadlineStatus !== 'done' && (
-              <Button
-                className="w-full"
-                disabled={completeDeadlineMutation.isPending}
-                onClick={() => completeDeadlineMutation.mutate()}
-              >
-                <CheckCircle2 className="mr-2 h-4 w-4" />
-                {t('eventHub.markDeadlineDone')}
-              </Button>
-            )}
-
             {(detail.description || detail.location) && (
               <div className="space-y-1 text-sm text-muted-foreground">
                 {detail.description && <p>{detail.description}</p>}
@@ -549,13 +700,22 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
               </div>
             )}
 
-            {!isDeadlineEvent && isCreator && (
+            {isCreator && (
               <div className="space-y-3 rounded-lg border p-3">
                 <div className="flex items-center gap-2">
                   <Users className="h-4 w-4 text-muted-foreground" />
-                  <h3 className="text-sm font-semibold">{t('eventHub.inviteContacts')}</h3>
+                  <h3 className="text-sm font-semibold">{t('eventHub.manageAccess')}</h3>
                 </div>
-                <p className="text-xs text-muted-foreground">{t('eventHub.inviteHint')}</p>
+                <p className="text-xs text-muted-foreground">{t('eventHub.manageAccessHint')}</p>
+                {accessEntries.length > 0 && (
+                  <EntityAccessPanel
+                    entries={accessEntries}
+                    canManage
+                    onRemove={handleRemoveParticipant}
+                    removingUserId={removingParticipantId}
+                    className="rounded-md border bg-muted/20 p-2"
+                  />
+                )}
                 <ContactMultiSelect
                   currentUserId={currentUser?.id}
                   selectedIds={inviteIds}
@@ -565,92 +725,64 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
                   size="sm"
                   className="w-full"
                   disabled={inviteMutation.isPending}
-                  onClick={() => inviteMutation.mutate()}
+                  onClick={() => inviteMutation.mutate(inviteIds)}
                 >
                   {t('eventHub.saveInvites')}
                 </Button>
               </div>
             )}
 
-            {!isDeadlineEvent && !isCreator && detail.participants && detail.participants.length > 0 && (
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-muted-foreground" />
-                <div className="flex -space-x-2">
-                  {detail.participants.map((p) => (
-                    <Avatar key={p.id} className="h-7 w-7 border-2 border-background">
-                      <AvatarImage src={p.user?.avatar ?? undefined} />
-                      <AvatarFallback className="text-[9px]">
-                        {p.user ? getInitials(p.user.name) : '?'}
-                      </AvatarFallback>
-                    </Avatar>
-                  ))}
-                </div>
-                <span className="text-sm text-muted-foreground">
-                  {detail.participants.length} {t('eventHub.participants')}
-                </span>
-              </div>
-            )}
-
             {!isDeadlineEvent && myItems.length > 0 && (
-              <div className="rounded-lg border-2 border-primary/25 bg-primary/5 p-3">
-                <div className="mb-2 flex items-center gap-2">
-                  <Package className="h-4 w-4 text-primary" />
-                  <h3 className="text-sm font-semibold">{t('eventHub.yourItems')}</h3>
-                </div>
-                <div className="space-y-1.5">
+              <HubSection icon={Package} title={t('eventHub.yourItems')}>
+                <div className={hubListClass}>
                   {myItems.map((item) => (
-                    <label
+                    <ShoppingHubRow
                       key={item.id}
-                      className="flex cursor-pointer items-center gap-3 rounded-md bg-background/80 px-2 py-2"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={item.done}
-                        onChange={() =>
-                          toggleItemMutation.mutate({ itemId: item.id, done: !item.done })
-                        }
-                        className="h-4 w-4 rounded"
-                      />
-                      <span
-                        className={cn(
-                          'flex-1 text-sm font-medium',
-                          item.done && 'line-through opacity-60',
-                        )}
-                      >
-                        {item.title}
-                      </span>
-                      <Badge variant="outline" className="text-[10px]">
-                        {t(`eventHub.itemTypes.${item.type}`)}
-                      </Badge>
-                    </label>
+                      title={item.title}
+                      done={item.done}
+                      canEdit={isCollaborator}
+                      onToggle={() =>
+                        toggleItemMutation.mutate({ itemId: item.id, done: !item.done })
+                      }
+                      onTitleChange={async (title) => {
+                        await updateItemMutation.mutateAsync({ itemId: item.id, title });
+                      }}
+                    />
                   ))}
                 </div>
-              </div>
+              </HubSection>
             )}
 
             {!isDeadlineEvent && (
             <>
-            <section className="space-y-2">
-              <SectionHeader
-                icon={Wallet}
-                title={t('eventHub.expenses')}
-                count={
-                  detail.expenses.length > 0
-                    ? formatCurrency(detail.stats.expensesTotal)
-                    : undefined
-                }
-              />
-              {detail.expenses.length > 0 && (
-                <div className="space-y-2">
+            <HubSection
+              icon={Wallet}
+              title={t('eventHub.expenses')}
+              count={
+                detail.expenses.length > 0
+                  ? formatCurrency(detail.stats.expensesTotal)
+                  : undefined
+              }
+            >
+              {detail.expenses.length > 0 ? (
+                <div className={hubListClass}>
                   {detail.expenses.map((expense) => (
                     <ExpenseCard
                       key={expense.id}
                       expense={expense}
                       currentUserId={currentUser?.id ?? ''}
                       compact
+                      canEditAmount={isCollaborator}
+                      onAmountChange={(expenseId, amount) =>
+                        updateExpenseMutation.mutate({ expenseId, amount })
+                      }
+                      updatingAmount={
+                        updateExpenseMutation.isPending && updatingExpenseId === expense.id
+                      }
                       onSettleShare={(expenseId, shareId) =>
                         settleShareMutation.mutate({ expenseId, shareId })
                       }
+                      canDelete={isCollaborator}
                       onDelete={(id) => deleteExpenseMutation.mutate(id)}
                       deleting={
                         deleteExpenseMutation.isPending && deletingExpenseId === expense.id
@@ -661,162 +793,112 @@ export function EventDetailModal({ eventId, open, onOpenChange }: EventDetailMod
                     />
                   ))}
                 </div>
-              )}
-              <ExpenseSplitForm
-                extraParticipants={people}
-                currentUserId={currentUser?.id ?? ''}
-                onSubmit={(data) => addExpenseMutation.mutate(data)}
-                isPending={addExpenseMutation.isPending}
-                submitLabel={t('eventHub.addExpense')}
-              />
-            </section>
-
-            {/* Tasks */}
-            <section className="space-y-2">
-              <SectionHeader
-                icon={CheckSquare}
-                title={t('eventHub.tasks')}
-                count={`${detail.stats.tasksDone}/${detail.stats.tasksTotal}`}
-              />
-              {detail.tasks.length === 0 ? (
-                <p className="py-2 text-sm text-muted-foreground">{t('eventHub.noTasks')}</p>
               ) : (
-                <div className="rounded-lg border p-2">
-                  {detail.tasks.map((task) => (
-                    <TaskRow key={task.id} task={task} />
-                  ))}
-                </div>
+                <p className={hubEmptyClass}>{t('eventHub.noExpenses')}</p>
               )}
-              <div className="flex flex-wrap gap-2">
-                <Input
-                  className="min-w-[140px] flex-1"
-                  placeholder={t('eventHub.addTask')}
-                  value={newTaskTitle}
-                  onChange={(e) => setNewTaskTitle(e.target.value)}
-                  onKeyDown={(e) =>
-                    e.key === 'Enter' &&
-                    newTaskTitle &&
-                    addTaskMutation.mutate({ title: newTaskTitle, assigneeId: newTaskAssigneeId })
-                  }
+              {isCollaborator && (
+                <ExpenseSplitForm
+                  extraParticipants={people}
+                  currentUserId={currentUser?.id ?? ''}
+                  onSubmit={(data) => addExpenseMutation.mutate(data)}
+                  isPending={addExpenseMutation.isPending}
+                  submitLabel={t('eventHub.addExpense')}
                 />
-                {people.length > 0 && (
-                  <AssigneeSelect
-                    people={people}
-                    value={newTaskAssigneeId}
-                    onChange={setNewTaskAssigneeId}
-                    className="w-36"
-                  />
-                )}
-                <Button
-                  size="icon"
-                  disabled={!newTaskTitle || addTaskMutation.isPending}
-                  onClick={() =>
-                    addTaskMutation.mutate({ title: newTaskTitle, assigneeId: newTaskAssigneeId })
-                  }
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-            </section>
+              )}
+            </HubSection>
 
-            {/* Checklist */}
-            <section className="space-y-2">
-              <SectionHeader
-                icon={ShoppingBag}
-                title={t('eventHub.items')}
-                count={`${detail.stats.itemsDone}/${detail.stats.itemsTotal}`}
-              />
+            <HubSection
+              icon={CheckSquare}
+              title={t('eventHub.tasks')}
+              count={`${detail.stats.tasksDone}/${detail.stats.tasksTotal}`}
+            >
+              {detail.tasks.length === 0 && !isCollaborator ? (
+                <p className={hubEmptyClass}>{t('eventHub.noTasks')}</p>
+              ) : (
+                <TaskTree
+                  tasks={detail.tasks}
+                  people={people}
+                  canEdit={isCollaborator}
+                  addPlaceholder={t('eventHub.addTask')}
+                  deleteConfirm={t('eventHub.deleteTaskConfirm')}
+                  isCreating={addTaskMutation.isPending}
+                  onCreate={(payload) => addTaskMutation.mutate(payload)}
+                  onStatusChange={(taskId, status) =>
+                    updateTaskMutation.mutate({ taskId, status })
+                  }
+                  onTitleChange={async (taskId, title) => {
+                    await updateTaskMutation.mutateAsync({ taskId, title });
+                  }}
+                  onAssigneeChange={(taskId, assigneeId) =>
+                    updateTaskMutation.mutate({ taskId, assigneeId })
+                  }
+                  onDelete={(taskId) => deleteTaskMutation.mutate(taskId)}
+                  onReorder={(updates) => reorderTasksMutation.mutate(updates)}
+                  isReordering={reorderTasksMutation.isPending}
+                />
+              )}
+            </HubSection>
+
+            <HubSection
+              icon={ShoppingBag}
+              title={t('eventHub.shopping')}
+              count={`${detail.stats.itemsDone}/${detail.stats.itemsTotal}`}
+            >
               {detail.items.length === 0 ? (
-                <p className="py-2 text-sm text-muted-foreground">{t('eventHub.noItems')}</p>
+                <p className={hubEmptyClass}>{t('eventHub.noShopping')}</p>
               ) : (
-                <div className="space-y-1">
+                <div className={hubListClass}>
                   {detail.items.map((item) => (
-                    <div
+                    <ShoppingHubRow
                       key={item.id}
-                      className="flex items-center gap-2 rounded-lg border p-2 hover:bg-accent/30"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={item.done}
-                        onChange={() =>
-                          toggleItemMutation.mutate({ itemId: item.id, done: !item.done })
-                        }
-                        className="h-4 w-4 shrink-0 rounded"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p
-                          className={cn(
-                            'truncate text-sm font-medium',
-                            item.done && 'line-through opacity-60',
-                          )}
-                        >
-                          {item.title}
-                        </p>
-                        <Badge variant="outline" className="mt-0.5 text-[10px]">
-                          {t(`eventHub.itemTypes.${item.type}`)}
-                        </Badge>
-                      </div>
-                      {people.length > 0 ? (
-                        <AssigneeSelect
-                          people={people}
-                          value={item.assigneeId ?? undefined}
-                          onChange={(assigneeId) =>
-                            assignItemMutation.mutate({ itemId: item.id, assigneeId })
-                          }
-                          className="w-32 shrink-0"
-                        />
-                      ) : (
-                        item.assignee && (
-                          <Avatar className="h-6 w-6 shrink-0">
-                            <AvatarImage src={item.assignee.avatar ?? undefined} />
-                            <AvatarFallback className="text-[8px]">
-                              {getInitials(item.assignee.name)}
-                            </AvatarFallback>
-                          </Avatar>
-                        )
-                      )}
-                    </div>
+                      title={item.title}
+                      done={item.done}
+                      canEdit={isCollaborator}
+                      assignee={item.assignee}
+                      deleteConfirm={t('eventHub.deleteItemConfirm')}
+                      onToggle={() =>
+                        toggleItemMutation.mutate({ itemId: item.id, done: !item.done })
+                      }
+                      onTitleChange={async (title) => {
+                        await updateItemMutation.mutateAsync({ itemId: item.id, title });
+                      }}
+                      onDelete={() => deleteItemMutation.mutate(item.id)}
+                      assigneeControl={
+                        isCollaborator ? (
+                          <AssigneePicker
+                            people={people}
+                            value={item.assigneeId}
+                            onChange={(assigneeId) =>
+                              assignItemMutation.mutate({
+                                itemId: item.id,
+                                assigneeId,
+                              })
+                            }
+                            className="opacity-60 group-hover:opacity-100"
+                          />
+                        ) : undefined
+                      }
+                    />
                   ))}
                 </div>
               )}
-              <div className="flex flex-wrap gap-2">
-                <Select
-                  value={newItemType}
-                  onValueChange={(v) => setNewItemType(v as EventItemType)}
-                >
-                  <SelectTrigger className="w-28">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="buy">{t('eventHub.itemTypes.buy')}</SelectItem>
-                    <SelectItem value="bring">{t('eventHub.itemTypes.bring')}</SelectItem>
-                    <SelectItem value="reminder">{t('eventHub.itemTypes.reminder')}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input
-                  className="min-w-[120px] flex-1"
-                  placeholder={t('eventHub.addItem')}
+              {isCollaborator && (
+                <HubAddRow
                   value={newItemTitle}
-                  onChange={(e) => setNewItemTitle(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && newItemTitle && addItemMutation.mutate()}
+                  onChange={setNewItemTitle}
+                  placeholder={t('eventHub.addShopping')}
+                  isPending={addItemMutation.isPending}
+                  onSubmit={() => addItemMutation.mutate()}
+                  extra={
+                    <AssigneePicker
+                      people={people}
+                      value={newItemAssigneeId}
+                      onChange={(assigneeId) => setNewItemAssigneeId(assigneeId ?? undefined)}
+                    />
+                  }
                 />
-                {people.length > 0 && (
-                  <AssigneeSelect
-                    people={people}
-                    value={newItemAssigneeId}
-                    onChange={setNewItemAssigneeId}
-                    className="w-36"
-                  />
-                )}
-                <Button
-                  size="icon"
-                  disabled={!newItemTitle || addItemMutation.isPending}
-                  onClick={() => addItemMutation.mutate()}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-            </section>
+              )}
+            </HubSection>
             </>
             )}
           </div>

@@ -7,6 +7,7 @@ import { UpdateEventDto } from './dto/update-event.dto';
 import { CreateEventTaskDto } from './dto/create-event-task.dto';
 import { CreateEventItemDto } from './dto/create-event-item.dto';
 import { UpdateEventItemDto } from './dto/update-event-item.dto';
+import { UpdateEventTaskDto } from './dto/update-event-task.dto';
 import { CreateExpenseDto } from '../expenses/dto/create-expense.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -52,6 +53,27 @@ export class EventsController {
     @Body() dto: CreateEventTaskDto,
   ) {
     return this.eventsService.addTask(userId, id, dto);
+  }
+
+  @Patch(':id/tasks/:taskId')
+  @ApiOperation({ summary: 'Update event task' })
+  updateTask(
+    @CurrentUser('sub') userId: string,
+    @Param('id') id: string,
+    @Param('taskId') taskId: string,
+    @Body() dto: UpdateEventTaskDto,
+  ) {
+    return this.eventsService.updateTask(userId, id, taskId, dto);
+  }
+
+  @Delete(':id/tasks/:taskId')
+  @ApiOperation({ summary: 'Delete event task' })
+  removeTask(
+    @CurrentUser('sub') userId: string,
+    @Param('id') id: string,
+    @Param('taskId') taskId: string,
+  ) {
+    return this.eventsService.removeTask(userId, id, taskId);
   }
 
   @Post(':id/expenses')
@@ -128,10 +150,26 @@ export class EventsController {
     return this.eventsService.update(userId, id, dto);
   }
 
+  @Delete(':id/occurrence')
+  @ApiOperation({ summary: 'Skip one occurrence of a recurring event or reminder' })
+  deleteOccurrence(
+    @CurrentUser('sub') userId: string,
+    @Param('id') id: string,
+    @Query('occursOn') occursOn: string,
+  ) {
+    return this.eventsService.deleteRecurringOccurrence(userId, id, occursOn);
+  }
+
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete event' })
-  remove(@CurrentUser('sub') userId: string, @Param('id') id: string) {
-    return this.eventsService.remove(userId, id);
+  @ApiOperation({ summary: 'Delete event (creator only)' })
+  deleteEvent(@CurrentUser('sub') userId: string, @Param('id') id: string) {
+    return this.eventsService.deleteEvent(userId, id);
+  }
+
+  @Post(':id/leave')
+  @ApiOperation({ summary: 'Leave event (creator or invited participant)' })
+  leaveEvent(@CurrentUser('sub') userId: string, @Param('id') id: string) {
+    return this.eventsService.leaveEvent(userId, id);
   }
 
   @Patch(':id/respond/:status')

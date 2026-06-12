@@ -51,6 +51,7 @@ export class ShoppingListService {
     ownerId: string;
     name: string;
     position: number;
+    hidden?: boolean;
     createdAt: Date;
     updatedAt: Date;
     owner?: {
@@ -83,6 +84,7 @@ export class ShoppingListService {
       ownerId: section.ownerId,
       name: section.name,
       position: section.position,
+      hidden: section.hidden ?? false,
       createdAt: section.createdAt.toISOString(),
       updatedAt: section.updatedAt.toISOString(),
       isShared: members.length > 0,
@@ -107,6 +109,8 @@ export class ShoppingListService {
     section?: Parameters<ShoppingListService['mapSection']>[0] | null;
     eventItem?: {
       eventId: string;
+      assigneeId: string | null;
+      assignee?: Parameters<typeof toUserDto>[0] | null;
       event?: { id: string; title: string } | null;
     } | null;
   }): ShoppingListItem {
@@ -117,6 +121,10 @@ export class ShoppingListService {
       eventItemId: item.eventItemId ?? null,
       eventId: item.eventItem?.eventId ?? item.eventItem?.event?.id ?? null,
       eventTitle: item.eventItem?.event?.title ?? null,
+      assigneeId: item.eventItem?.assigneeId ?? null,
+      assignee: item.eventItem?.assignee
+        ? toUserDto(item.eventItem.assignee as Parameters<typeof toUserDto>[0])
+        : undefined,
       title: item.title,
       done: item.done,
       boughtAt: item.boughtAt?.toISOString() ?? null,
@@ -195,13 +203,13 @@ export class ShoppingListService {
   }
 
   async updateSection(userId: string, id: string, dto: UpdateShoppingSectionDto) {
-    const section = await this.assertSectionAccess(userId, id, 'owner');
+    const section = await this.assertSectionAccess(userId, id, 'editor');
 
     if (dto.name) {
-      const owned = await this.repo.findSectionsForUser(userId);
-      const duplicate = owned.find(
+      const ownerSections = await this.repo.findSectionsForUser(section.ownerId);
+      const duplicate = ownerSections.find(
         (s) =>
-          s.ownerId === userId &&
+          s.ownerId === section.ownerId &&
           s.id !== id &&
           s.name.toLowerCase() === dto.name!.trim().toLowerCase(),
       );
@@ -209,11 +217,14 @@ export class ShoppingListService {
     }
 
     let updated = section;
-    if (dto.name !== undefined || dto.position !== undefined) {
+    if (dto.name !== undefined || dto.position !== undefined || dto.hidden !== undefined) {
       updated = (await this.repo.updateSection(id, dto))!;
     }
 
     if (dto.memberIds !== undefined) {
+      if (section.ownerId !== userId) {
+        throw new ForbiddenException('Only the section creator can change who has access');
+      }
       const memberIds = await this.validateContactIds(userId, dto.memberIds);
       updated = (await this.repo.setSectionMembers(id, memberIds))!;
     }
@@ -222,18 +233,28 @@ export class ShoppingListService {
   }
 
   async removeSection(userId: string, id: string) {
-    await this.assertSectionAccess(userId, id, 'owner');
+    await this.assertSectionAccess(userId, id, 'editor');
     await this.repo.deleteSection(id);
+  }
+
+  private isEventItemVisibleToUser(item: ShoppingListItem, userId: string) {
+    if (!item.eventItemId) return true;
+    if (item.assigneeId) return item.assigneeId === userId;
+    return item.ownerId === userId;
   }
 
   async findAll(userId: string, done?: boolean) {
     const items = await this.repo.findByUser(userId, done);
-    return items.map((i) => this.mapItem(i));
+    return items
+      .map((i) => this.mapItem(i))
+      .filter((item) => this.isEventItemVisibleToUser(item, userId));
   }
 
   async findPending(userId: string, limit?: number) {
     const items = await this.repo.findPending(userId, limit);
-    return items.map((i) => this.mapItem(i));
+    return items
+      .map((i) => this.mapItem(i))
+      .filter((item) => this.isEventItemVisibleToUser(item, userId));
   }
 
   async create(userId: string, dto: CreateShoppingItemDto) {
@@ -260,8 +281,13 @@ export class ShoppingListService {
     await this.assertSectionAccess(userId, sectionId, 'editor');
 
     const updated = await this.repo.update(id, dto);
-    if (updated.eventItemId && dto.done !== undefined) {
-      await this.repo.syncEventItemDone(updated.eventItemId, dto.done);
+    if (updated.eventItemId) {
+      if (dto.done !== undefined) {
+        await this.repo.syncEventItemDone(updated.eventItemId, dto.done);
+      }
+      if (dto.title !== undefined) {
+        await this.repo.syncEventItemTitle(updated.eventItemId, dto.title);
+      }
     }
     return this.mapItem(updated);
   }

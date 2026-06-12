@@ -1,10 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Search, UserPlus, Check, X, Trash2, Clock, Users } from 'lucide-react';
+import { UserPlus, Check, X, Trash2, Clock, Users } from 'lucide-react';
 import {
   Button,
-  Input,
   Card,
   CardContent,
   Avatar,
@@ -19,7 +18,11 @@ import {
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
 import { getInitials } from '@lifehub/utils';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { PageShell } from '@/components/layout/PageShell';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { PageLoading } from '@/components/layout/PageLoading';
+import { SearchField } from '@/components/shared/SearchField';
+import { StatusBanner } from '@/components/shared/StatusBanner';
 import { EmptyState } from '@/components/shared/EmptyState';
 import type { ConnectionWithUser, User } from '@lifehub/types';
 
@@ -72,8 +75,8 @@ function UserRow({
   const { t } = useTranslation();
 
   return (
-    <Card>
-      <CardContent className="flex items-center gap-3 p-3">
+    <Card className="rounded-xl">
+      <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
         <Avatar>
           <AvatarImage src={user.avatar ?? undefined} />
           <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
@@ -212,7 +215,7 @@ export function ContactsPage() {
     sendMutation.isPending ||
     removeMutation.isPending;
 
-  if (contactsLoading || pendingLoading) return <LoadingSpinner />;
+  if (contactsLoading || pendingLoading) return <PageLoading />;
 
   const getStatus = (userId: string) =>
     getConnectionStatus(userId, currentUser?.id, contacts, pending);
@@ -221,36 +224,21 @@ export function ContactsPage() {
     userId ? pending?.find((c) => otherUserId(c, userId) === targetUserId) : undefined;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">{t('contacts.title')}</h1>
-        <p className="text-muted-foreground">{t('contacts.subtitle')}</p>
-      </div>
+    <PageShell width="wide">
+      <PageHeader title={t('contacts.title')} subtitle={t('contacts.subtitle')} />
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder={t('contacts.searchPlaceholder')}
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            setActionSuccess(null);
-            setActionError(null);
-          }}
-          className="pl-9"
-        />
-      </div>
+      <SearchField
+        value={search}
+        onChange={(value) => {
+          setSearch(value);
+          setActionSuccess(null);
+          setActionError(null);
+        }}
+        placeholder={t('contacts.searchPlaceholder')}
+      />
 
-      {actionError && (
-        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {actionError}
-        </p>
-      )}
-      {actionSuccess && (
-        <p className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400">
-          {actionSuccess}
-        </p>
-      )}
+      {actionError && <StatusBanner variant="error">{actionError}</StatusBanner>}
+      {actionSuccess && <StatusBanner variant="success">{actionSuccess}</StatusBanner>}
 
       {search.trim().length >= 2 && (
         <div className="space-y-2">
@@ -370,6 +358,6 @@ export function ContactsPage() {
           )}
         </TabsContent>
       </Tabs>
-    </div>
+    </PageShell>
   );
 }

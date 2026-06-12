@@ -127,6 +127,7 @@ model ShoppingSection {
   ownerId   String
   name      String
   position  Int      @default(0)
+  hidden    Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -264,10 +265,11 @@ model Event {
   calendar     Calendar           @relation(fields: [calendarId], references: [id], onDelete: Cascade)
   createdBy    User               @relation("EventCreator", fields: [createdById], references: [id], onDelete: Cascade)
   participants EventParticipant[]
-  dismissals   EventDismissal[]
-  tasks        Task[]
-  expenses     Expense[]
-  items        EventItem[]
+  dismissals            EventDismissal[]
+  recurrenceExceptions  EventRecurrenceException[]
+  tasks                 Task[]
+  expenses              Expense[]
+  items                 EventItem[]
 
   @@index([calendarId])
   @@index([createdById])
@@ -328,6 +330,19 @@ model EventDismissal {
   @@index([eventId])
   @@index([userId])
   @@map("event_dismissals")
+}
+
+model EventRecurrenceException {
+  id        String   @id @default(cuid())
+  eventId   String
+  occursOn  DateTime
+  createdAt DateTime @default(now())
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, occursOn])
+  @@index([eventId])
+  @@map("event_recurrence_exceptions")
 }
 
 model Task {

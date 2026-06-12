@@ -141,6 +141,28 @@ export function resolveDueDate(dueInput?: string): { startDate: string; endDate:
   return { startDate: start.toISOString(), endDate: end.toISOString() };
 }
 
+export function resolveAllDayEventDates(
+  startInput?: string,
+  endInput?: string,
+): { startDate: string; endDate: string } {
+  const today = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const todayKey = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+  const startKey = startInput?.trim().split('T')[0] || todayKey;
+  const endKey = endInput?.trim().split('T')[0] || startKey;
+  const [sy, sm, sd] = startKey.split('-').map(Number);
+  const [ey, em, ed] = endKey.split('-').map(Number);
+  const start = new Date(sy, sm - 1, sd, 0, 0, 0, 0);
+  let end = new Date(ey, em - 1, ed, 23, 59, 59, 999);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    throw new Error('Invalid date');
+  }
+  if (end < start) {
+    end = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 23, 59, 59, 999);
+  }
+  return { startDate: start.toISOString(), endDate: end.toISOString() };
+}
+
 export function resolveEventDates(
   startInput?: string,
   endInput?: string,

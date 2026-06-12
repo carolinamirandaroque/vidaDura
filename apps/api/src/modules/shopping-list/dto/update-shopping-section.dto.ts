@@ -1,4 +1,4 @@
-import { IsArray, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateShoppingSectionDto {
@@ -13,6 +13,11 @@ export class UpdateShoppingSectionDto {
   @IsInt()
   @Min(0)
   position?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  hidden?: boolean;
 
   @ApiPropertyOptional({ type: [String], description: 'Contact user IDs to share with (replaces current)' })
   @IsOptional()

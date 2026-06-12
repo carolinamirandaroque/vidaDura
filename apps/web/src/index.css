@@ -57,3 +57,25 @@
     @apply bg-background text-foreground font-sans antialiased;
   }
 }
+
+@layer components {
+  .page-container {
+    @apply mx-auto w-full max-w-3xl space-y-5 sm:space-y-6;
+  }
+  .page-container-narrow {
+    @apply mx-auto w-full max-w-lg space-y-5 sm:space-y-6;
+  }
+  .page-container-wide {
+    @apply mx-auto w-full max-w-5xl space-y-5 sm:space-y-6;
+  }
+  .panel-muted {
+    @apply rounded-xl border bg-muted/30 p-3 sm:p-4;
+  }
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}

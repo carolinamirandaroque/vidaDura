@@ -109,8 +109,8 @@ export class DashboardService {
 
     const stats = {
       tasksTotal: allTasks.length,
-      tasksTodo: allTasks.filter((t) => t.status === 'todo').length,
-      tasksDoing: allTasks.filter((t) => t.status === 'doing').length,
+      tasksTodo: allTasks.filter((t) => t.status !== 'done').length,
+      tasksDoing: 0,
       tasksDone: allTasks.filter((t) => t.status === 'done').length,
       shoppingPending: shoppingItems.length,
       expensesYouOwe: Math.round(expensesYouOwe * 100) / 100,

@@ -28,7 +28,11 @@ export class TasksRepository {
       where: {
         AND: [
           { OR: [{ ownerId: userId }, { assigneeId: userId }] },
-          ...(filters?.status ? [{ status: filters.status }] : []),
+          ...(filters?.status === 'todo'
+            ? [{ status: { in: ['todo', 'doing'] as TaskStatus[] } }]
+            : filters?.status
+              ? [{ status: filters.status }]
+              : []),
           ...(filters?.priority ? [{ priority: filters.priority }] : []),
           ...(filters?.search
             ? [
@@ -83,6 +87,36 @@ export class TasksRepository {
       where: { eventId },
       include: taskInclude,
       orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  findByEvents(eventIds: string[]) {
+    if (!eventIds.length) return Promise.resolve([]);
+    return this.prisma.task.findMany({
+      where: { eventId: { in: eventIds } },
+      include: taskInclude,
+      orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  async updateDescendantAssignees(parentId: string, assigneeId: string | null) {
+    const children = await this.prisma.task.findMany({
+      where: { parentTaskId: parentId },
+      select: { id: true },
+    });
+    for (const child of children) {
+      await this.prisma.task.update({
+        where: { id: child.id },
+        data: { assigneeId },
+      });
+      await this.updateDescendantAssignees(child.id, assigneeId);
+    }
+  }
+
+  findEventRootTask(eventId: string, eventTitle: string) {
+    return this.prisma.task.findFirst({
+      where: { eventId, parentTaskId: null, title: eventTitle },
+      include: taskInclude,
     });
   }
 

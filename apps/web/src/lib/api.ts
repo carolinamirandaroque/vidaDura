@@ -234,6 +234,15 @@ class ApiClient {
     return this.request<void>(`/events/${id}`, { method: 'DELETE' });
   };
 
+  deleteEventOccurrence = (id: string, occursOn: string) => {
+    const params = new URLSearchParams({ occursOn });
+    return this.request<Event>(`/events/${id}/occurrence?${params}`, { method: 'DELETE' });
+  };
+
+  leaveEvent = (id: string) => {
+    return this.request<void>(`/events/${id}/leave`, { method: 'POST' });
+  };
+
   getEventDetail = (id: string) => {
     return this.request<EventDetail>(`/events/${id}/detail`);
   };
@@ -243,6 +252,21 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(dto),
     });
+  };
+
+  updateEventTask = (
+    eventId: string,
+    taskId: string,
+    dto: { title?: string; status?: string; assigneeId?: string | null },
+  ) => {
+    return this.request<Task>(`/events/${eventId}/tasks/${taskId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(dto),
+    });
+  };
+
+  deleteEventTask = (eventId: string, taskId: string) => {
+    return this.request<void>(`/events/${eventId}/tasks/${taskId}`, { method: 'DELETE' });
   };
 
   addEventExpense = (eventId: string, dto: CreateExpenseDto) => {
@@ -264,6 +288,10 @@ class ApiClient {
       method: 'PATCH',
       body: JSON.stringify(dto),
     });
+  };
+
+  deleteEventItem = (eventId: string, itemId: string) => {
+    return this.request<void>(`/events/${eventId}/items/${itemId}`, { method: 'DELETE' });
   };
 
   getPendingInvites = () => {

@@ -1,6 +1,10 @@
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowRight, CheckCircle2, Trash2 } from 'lucide-react';
-import { Badge, Button, cn } from '@lifehub/ui';
+import { Badge, Button, Input, cn } from '@lifehub/ui';
+import { hubRowClass } from '@/components/hub';
+import { EntityAccessPanel } from '@/components/shared/EntityAccessPanel';
+import { buildExpenseAccessEntries, canManageExpense } from '@/lib/entity-access';
 import { getExpenseObligations, getExpenseSettlementStatus } from '@lifehub/utils';
 import { useFormatters } from '@/hooks/useFormatters';
 import type { Expense } from '@lifehub/types';
@@ -10,6 +14,11 @@ interface ExpenseCardProps {
   currentUserId: string;
   onSettleShare?: (expenseId: string, shareId: string) => void;
   onDelete?: (expenseId: string) => void;
+  onAmountChange?: (expenseId: string, amount: number) => void;
+  canEditAmount?: boolean;
+  canDelete?: boolean;
+  showAccess?: boolean;
+  updatingAmount?: boolean;
   deleting?: boolean;
   settlingShareId?: string | null;
   compact?: boolean;
@@ -20,12 +29,23 @@ export function ExpenseCard({
   currentUserId,
   onSettleShare,
   onDelete,
+  onAmountChange,
+  canEditAmount,
+  canDelete,
+  showAccess = true,
+  updatingAmount,
   deleting,
   settlingShareId,
   compact,
 }: ExpenseCardProps) {
   const { t } = useTranslation();
   const { formatCurrency, formatDate } = useFormatters();
+  const [editingAmount, setEditingAmount] = useState(false);
+  const [editAmount, setEditAmount] = useState(String(expense.amount));
+
+  useEffect(() => {
+    if (!editingAmount) setEditAmount(String(expense.amount));
+  }, [expense.amount, editingAmount]);
   const payer = expense.paidBy ?? expense.creator;
   const obligations = getExpenseObligations(expense);
   const status = getExpenseSettlementStatus(expense);
@@ -73,10 +93,19 @@ export function ExpenseCard({
     },
   }[statusKey];
 
-  const isCreator = expense.creatorId === currentUserId;
+  const canRemove =
+    canDelete ?? canManageExpense(expense, currentUserId, canEditAmount);
+  const accessEntries = buildExpenseAccessEntries(expense);
+
+  const saveAmount = () => {
+    const value = parseFloat(editAmount);
+    setEditingAmount(false);
+    if (!value || value <= 0 || value === expense.amount) return;
+    onAmountChange?.(expense.id, value);
+  };
 
   return (
-    <div className={compact ? 'rounded-lg border p-3 space-y-2' : 'space-y-2'}>
+    <div className={cn(hubRowClass, 'flex-col items-stretch gap-2', !compact && 'p-3')}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -96,10 +125,39 @@ export function ExpenseCard({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <span className="text-lg font-semibold">
-            {formatCurrency(expense.amount, expense.currency)}
-          </span>
-          {isCreator && onDelete && (
+          {editingAmount && canEditAmount && onAmountChange ? (
+            <Input
+              type="number"
+              step="0.01"
+              min="0.01"
+              value={editAmount}
+              onChange={(e) => setEditAmount(e.target.value)}
+              onBlur={saveAmount}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') saveAmount();
+                if (e.key === 'Escape') {
+                  setEditAmount(String(expense.amount));
+                  setEditingAmount(false);
+                }
+              }}
+              className="h-8 w-24 text-right text-lg font-semibold"
+              autoFocus
+              disabled={updatingAmount}
+            />
+          ) : (
+            <button
+              type="button"
+              disabled={!canEditAmount || !onAmountChange || updatingAmount}
+              onClick={() => canEditAmount && onAmountChange && setEditingAmount(true)}
+              className={cn(
+                'text-lg font-semibold',
+                canEditAmount && onAmountChange && 'hover:underline',
+              )}
+            >
+              {formatCurrency(expense.amount, expense.currency)}
+            </button>
+          )}
+          {canRemove && onDelete && (
             <Button
               type="button"
               variant="ghost"
@@ -176,6 +234,10 @@ export function ExpenseCard({
 
       {obligations.length === 0 && (
         <p className="text-xs text-muted-foreground">{t('expenses.noDebtsOnExpense')}</p>
+      )}
+
+      {showAccess && accessEntries.length > 1 && (
+        <EntityAccessPanel entries={accessEntries} className="rounded-md border bg-muted/20 p-2" />
       )}
     </div>
   );

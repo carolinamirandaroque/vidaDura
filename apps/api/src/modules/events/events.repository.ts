@@ -14,6 +14,17 @@ export class EventsRepository {
       include: {
         participants: { include: { user: true } },
         calendar: true,
+        recurrenceExceptions: { orderBy: { occursOn: 'asc' } },
+      },
+    });
+  }
+
+  findByIds(ids: string[]) {
+    if (!ids.length) return Promise.resolve([]);
+    return this.prisma.event.findMany({
+      where: { id: { in: ids } },
+      include: {
+        participants: { select: { userId: true } },
       },
     });
   }
@@ -25,6 +36,7 @@ export class EventsRepository {
         createdBy: true,
         participants: { include: { user: true } },
         calendar: true,
+        recurrenceExceptions: { orderBy: { occursOn: 'asc' } },
         tasks: {
           include: { assignee: true, event: { select: { id: true, title: true } } },
           orderBy: [{ position: 'asc' }, { createdAt: 'asc' }],
@@ -90,8 +102,17 @@ export class EventsRepository {
       include: {
         participants: { include: { user: true } },
         calendar: true,
+        recurrenceExceptions: { orderBy: { occursOn: 'asc' } },
       },
       orderBy: { startDate: 'asc' },
+    });
+  }
+
+  addRecurrenceException(eventId: string, occursOn: Date) {
+    return this.prisma.eventRecurrenceException.upsert({
+      where: { eventId_occursOn: { eventId, occursOn } },
+      create: { eventId, occursOn },
+      update: {},
     });
   }
 
@@ -196,6 +217,23 @@ export class EventsRepository {
     });
   }
 
+  transferCreator(eventId: string, newCreatorId: string, previousCreatorId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.event.update({
+        where: { id: eventId },
+        data: { createdById: newCreatorId },
+      });
+      await tx.eventParticipant.deleteMany({
+        where: { eventId, userId: newCreatorId },
+      });
+      await tx.eventDismissal.upsert({
+        where: { eventId_userId: { eventId, userId: previousCreatorId } },
+        create: { eventId, userId: previousCreatorId },
+        update: {},
+      });
+    });
+  }
+
   updateParticipantStatus(eventId: string, userId: string, status: 'accepted' | 'declined') {
     return this.prisma.eventParticipant.update({
       where: { eventId_userId: { eventId, userId } },
@@ -252,5 +290,20 @@ export class EventsRepository {
       include: { event: { include: { calendar: true } }, user: true },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async isCollaborator(eventId: string, userId: string) {
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      select: {
+        createdById: true,
+        participants: { select: { userId: true } },
+      },
+    });
+    if (!event) return false;
+    return (
+      event.createdById === userId ||
+      event.participants.some((participant) => participant.userId === userId)
+    );
   }
 }

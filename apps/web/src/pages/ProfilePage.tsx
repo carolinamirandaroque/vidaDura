@@ -20,6 +20,8 @@ import { api } from '@/lib/api';
 import { getInitials } from '@lifehub/utils';
 import { LanguageSwitcher } from '@/components/shared/LanguageSwitcher';
 import { PwaInstallCard } from '@/components/shared/PwaInstallCard';
+import { PageShell } from '@/components/layout/PageShell';
+import { PageHeader } from '@/components/layout/PageHeader';
 
 export function ProfilePage() {
   const { t } = useTranslation();
@@ -33,13 +35,10 @@ export function ProfilePage() {
   });
 
   return (
-    <div className="mx-auto max-w-lg space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">{t('profile.title')}</h1>
-        <p className="text-muted-foreground">{t('profile.subtitle')}</p>
-      </div>
+    <PageShell width="narrow">
+      <PageHeader title={t('profile.title')} subtitle={t('profile.subtitle')} />
 
-      <Card>
+      <Card className="rounded-xl">
         <CardHeader className="flex flex-row items-center gap-4">
           <Avatar className="h-16 w-16">
             <AvatarImage src={user?.avatar ?? undefined} />
@@ -47,9 +46,9 @@ export function ProfilePage() {
               {user ? getInitials(user.name) : '?'}
             </AvatarFallback>
           </Avatar>
-          <div>
-            <CardTitle>{user?.name}</CardTitle>
-            <p className="text-sm text-muted-foreground">{user?.email}</p>
+          <div className="min-w-0">
+            <CardTitle className="truncate">{user?.name}</CardTitle>
+            <p className="truncate text-sm text-muted-foreground">{user?.email}</p>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -67,7 +66,7 @@ export function ProfilePage() {
 
           <Separator />
 
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <Label>{t('language.label')}</Label>
             <LanguageSwitcher />
           </div>
@@ -79,6 +78,6 @@ export function ProfilePage() {
       <Button variant="destructive" className="w-full" onClick={logout}>
         <LogOut className="mr-2 h-4 w-4" /> {t('profile.logout')}
       </Button>
-    </div>
+    </PageShell>
   );
 }

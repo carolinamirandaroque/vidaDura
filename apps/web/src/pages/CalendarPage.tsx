@@ -14,9 +14,13 @@ import {
   DialogTitle,
   Input,
   Label,
+  Switch,
 } from '@lifehub/ui';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
+import { PageShell } from '@/components/layout/PageShell';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { PageLoading } from '@/components/layout/PageLoading';
 import { ContactMultiSelect } from '@/components/shared/ContactMultiSelect';
 import { DatePickerField } from '@/components/shared/DatePickerField';
 import { DateTimePickerField } from '@/components/shared/DateTimePickerField';
@@ -24,10 +28,10 @@ import {
   getViewRange,
   navigateDate,
   formatViewTitle,
+  resolveAllDayEventDates,
   resolveDueDate,
   resolveEventDates,
 } from '@/lib/calendar';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { MonthGrid } from '@/components/calendar/MonthGrid';
 import { WeekGrid } from '@/components/calendar/WeekGrid';
 import { DayView } from '@/components/calendar/DayView';
@@ -40,7 +44,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@lifehub/ui';
-import { expandRecurringEvents, getEventSeriesId } from '@lifehub/utils';
+import { expandRecurringEvents, parseRecurrenceInstanceId } from '@lifehub/utils';
 import type { Event, EventView, HubEventType, RecurrenceType } from '@lifehub/types';
 import { HUB_EVENT_TYPES, getEventTypeColor } from '@/lib/event-types';
 
@@ -53,6 +57,7 @@ export function CalendarPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [createKind, setCreateKind] = useState<'appointment' | 'deadline'>('appointment');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedOccurrenceDate, setSelectedOccurrenceDate] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [newEvent, setNewEvent] = useState({
@@ -65,6 +70,7 @@ export function CalendarPage() {
     recurrence: 'none' as RecurrenceType,
     recurrenceEnd: '',
     dueDate: '',
+    allDay: false,
   });
   const queryClient = useQueryClient();
 
@@ -99,6 +105,7 @@ export function CalendarPage() {
       recurrence?: RecurrenceType;
       recurrenceEnd?: string;
       participantIds?: string[];
+      allDay?: boolean;
     }) =>
       kind === 'deadline'
         ? api.createDeadline({
@@ -114,6 +121,7 @@ export function CalendarPage() {
             calendarId: dto.calendarId,
             startDate: dto.startDate,
             endDate: dto.endDate,
+            allDay: dto.allDay,
             type: dto.type,
             recurrence: dto.recurrence,
             recurrenceEnd: dto.recurrenceEnd,
@@ -134,6 +142,7 @@ export function CalendarPage() {
         recurrence: 'none',
         recurrenceEnd: '',
         dueDate: '',
+        allDay: false,
       });
       setCreateKind('appointment');
     },
@@ -150,40 +159,59 @@ export function CalendarPage() {
   };
 
   const handleEventClick = (event: Event) => {
-    setSelectedEventId(getEventSeriesId(event.id));
+    const { seriesId, occurrenceAt } = parseRecurrenceInstanceId(event.id);
+    setSelectedEventId(seriesId);
+    setSelectedOccurrenceDate((occurrenceAt ?? new Date(event.startDate)).toISOString());
     setDetailOpen(true);
   };
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <PageLoading />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{t('calendar.title')}</h1>
-          <p className="text-muted-foreground capitalize">{formatViewTitle(view, currentDate, locale)}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => navigate(-1)}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button variant="outline" onClick={() => setCurrentDate(new Date())}>
-            {t('common.today')}
-          </Button>
-          <Button variant="outline" size="icon" onClick={() => navigate(1)}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-          <Button onClick={() => { setCreateKind('appointment'); setDialogOpen(true); }}>
-            <Plus className="mr-2 h-4 w-4" /> {t('calendar.addEvent')}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => { setCreateKind('deadline'); setDialogOpen(true); }}
-          >
-            <Bell className="mr-2 h-4 w-4" /> {t('calendar.addDeadline')}
-          </Button>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogContent>
+    <PageShell width="full">
+      <PageHeader
+        title={t('calendar.title')}
+        meta={<span className="capitalize">{formatViewTitle(view, currentDate, locale)}</span>}
+        actions={
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="icon" onClick={() => navigate(-1)}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())}>
+                {t('common.today')}
+              </Button>
+              <Button variant="outline" size="icon" onClick={() => navigate(1)}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            <Button
+              size="sm"
+              className="flex-1 sm:flex-none"
+              onClick={() => {
+                setCreateKind('appointment');
+                setDialogOpen(true);
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" /> {t('calendar.addEvent')}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1 sm:flex-none"
+              onClick={() => {
+                setCreateKind('deadline');
+                setDialogOpen(true);
+              }}
+            >
+              <Bell className="mr-2 h-4 w-4" /> {t('calendar.addDeadline')}
+            </Button>
+          </div>
+        }
+      />
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogContent className="max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>
                   {createKind === 'deadline'
@@ -209,7 +237,9 @@ export function CalendarPage() {
                     const dates =
                       createKind === 'deadline'
                         ? resolveDueDate(newEvent.dueDate)
-                        : resolveEventDates(newEvent.startDate, newEvent.endDate);
+                        : newEvent.allDay
+                          ? resolveAllDayEventDates(newEvent.startDate, newEvent.endDate)
+                          : resolveEventDates(newEvent.startDate, newEvent.endDate);
                     createMutation.mutate({
                       createKind,
                       title,
@@ -217,6 +247,7 @@ export function CalendarPage() {
                       calendarId,
                       startDate: dates.startDate,
                       endDate: dates.endDate,
+                      allDay: createKind === 'appointment' ? newEvent.allDay : undefined,
                       recurrence: newEvent.recurrence,
                       recurrenceEnd: newEvent.recurrenceEnd.trim()
                         ? new Date(newEvent.recurrenceEnd).toISOString()
@@ -281,21 +312,71 @@ export function CalendarPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <div className="space-y-2">
-                      <Label>{t('common.start')}</Label>
-                      <DateTimePickerField
-                        value={newEvent.startDate}
-                        onChange={(startDate) => setNewEvent({ ...newEvent, startDate })}
+                    <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                      <Label htmlFor="all-day" className="cursor-pointer">
+                        {t('calendar.allDay')}
+                      </Label>
+                      <Switch
+                        id="all-day"
+                        checked={newEvent.allDay}
+                        onCheckedChange={(allDay) =>
+                          setNewEvent((prev) => ({
+                            ...prev,
+                            allDay,
+                            startDate: allDay
+                              ? prev.startDate.split('T')[0]
+                              : prev.startDate
+                                ? `${prev.startDate.split('T')[0]}T09:00`
+                                : '',
+                            endDate: allDay
+                              ? prev.endDate.split('T')[0] || prev.startDate.split('T')[0]
+                              : prev.endDate
+                                ? `${prev.endDate.split('T')[0]}T10:00`
+                                : '',
+                          }))
+                        }
                       />
-                      <p className="text-xs text-muted-foreground">{t('eventHub.datesOptionalHint')}</p>
                     </div>
-                    <div className="space-y-2">
-                      <Label>{t('common.end')}</Label>
-                      <DateTimePickerField
-                        value={newEvent.endDate}
-                        onChange={(endDate) => setNewEvent({ ...newEvent, endDate })}
-                      />
-                    </div>
+                    {newEvent.allDay ? (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>{t('common.start')}</Label>
+                          <DatePickerField
+                            value={newEvent.startDate.split('T')[0]}
+                            onChange={(startDate) =>
+                              setNewEvent({ ...newEvent, startDate: startDate })
+                            }
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>{t('common.end')}</Label>
+                          <DatePickerField
+                            value={(newEvent.endDate || newEvent.startDate).split('T')[0]}
+                            onChange={(endDate) => setNewEvent({ ...newEvent, endDate: endDate })}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="space-y-2">
+                          <Label>{t('common.start')}</Label>
+                          <DateTimePickerField
+                            value={newEvent.startDate}
+                            onChange={(startDate) => setNewEvent({ ...newEvent, startDate })}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            {t('eventHub.datesOptionalHint')}
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>{t('common.end')}</Label>
+                          <DateTimePickerField
+                            value={newEvent.endDate}
+                            onChange={(endDate) => setNewEvent({ ...newEvent, endDate })}
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
                 <div className="space-y-2">
@@ -350,9 +431,7 @@ export function CalendarPage() {
                 </Button>
               </form>
             </DialogContent>
-          </Dialog>
-        </div>
-      </div>
+      </Dialog>
 
       <Tabs value={view} onValueChange={(v) => setView(v as EventView)}>
         <TabsList>
@@ -391,9 +470,13 @@ export function CalendarPage() {
 
       <EventDetailModal
         eventId={selectedEventId}
+        occurrenceDate={selectedOccurrenceDate}
         open={detailOpen}
-        onOpenChange={setDetailOpen}
+        onOpenChange={(nextOpen) => {
+          setDetailOpen(nextOpen);
+          if (!nextOpen) setSelectedOccurrenceDate(null);
+        }}
       />
-    </div>
+    </PageShell>
   );
 }

@@ -22,12 +22,17 @@ import {
 import { api } from '@/lib/api';
 import { ExpenseSplitForm } from '@/components/expenses/ExpenseSplitForm';
 import { ExpenseCard } from '@/components/expenses/ExpenseCard';
+import { HubSection, hubListClass } from '@/components/hub';
 import { getInitials, hasPendingDebts } from '@lifehub/utils';
 import { useFormatters } from '@/hooks/useFormatters';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { PageShell } from '@/components/layout/PageShell';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { PageLoading } from '@/components/layout/PageLoading';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { HubEmptyMessage } from '@/components/hub';
 import { Wallet } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
+import { canManageExpense } from '@/lib/entity-access';
 
 export function ExpensesPage() {
   const { t } = useTranslation();
@@ -98,23 +103,22 @@ export function ExpensesPage() {
     onSuccess: invalidateExpenseQueries,
   });
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <PageLoading />;
 
   const pendingCount = expenses?.filter((e) => hasPendingDebts(e)).length ?? 0;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{t('expenses.title')}</h1>
-          <p className="text-muted-foreground">{t('expenses.subtitle')}</p>
-        </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" /> {t('expenses.expense')}
-            </Button>
-          </DialogTrigger>
+    <PageShell width="wide">
+      <PageHeader
+        title={t('expenses.title')}
+        subtitle={t('expenses.subtitle')}
+        actions={
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="w-full sm:w-auto">
+                <Plus className="mr-2 h-4 w-4" /> {t('expenses.expense')}
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{t('expenses.newExpense')}</DialogTitle>
@@ -133,8 +137,9 @@ export function ExpensesPage() {
               }
             />
           </DialogContent>
-        </Dialog>
-      </div>
+          </Dialog>
+        }
+      />
 
       <Tabs defaultValue="history">
         <TabsList>
@@ -150,39 +155,40 @@ export function ExpensesPage() {
               description={t('expenses.noExpensesDescription')}
             />
           ) : (
-            <div className="space-y-3">
+            <HubSection icon={Wallet} title={t('expenses.history')}>
               {pendingCount > 0 && (
                 <p className="text-sm text-muted-foreground">
                   {t('expenses.pendingCount', { count: pendingCount })}
                 </p>
               )}
-              {expenses.map((expense) => (
-                <Card key={expense.id}>
-                  <CardContent className="p-4">
-                    <ExpenseCard
-                      expense={expense}
-                      currentUserId={userId ?? ''}
-                      onSettleShare={(expenseId, shareId) =>
-                        settleShareMutation.mutate({ expenseId, shareId })
-                      }
-                      onDelete={(id) => deleteMutation.mutate(id)}
-                      deleting={deleteMutation.isPending && deletingExpenseId === expense.id}
-                      settlingShareId={
-                        settleShareMutation.isPending ? settlingShareId : null
-                      }
-                    />
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+              <div className={hubListClass}>
+                {expenses.map((expense) => (
+                  <ExpenseCard
+                    key={expense.id}
+                    expense={expense}
+                    currentUserId={userId ?? ''}
+                    compact
+                    canEditAmount={canManageExpense(expense, userId ?? '')}
+                    onSettleShare={(expenseId, shareId) =>
+                      settleShareMutation.mutate({ expenseId, shareId })
+                    }
+                    onDelete={(id) => deleteMutation.mutate(id)}
+                    deleting={deleteMutation.isPending && deletingExpenseId === expense.id}
+                    settlingShareId={
+                      settleShareMutation.isPending ? settlingShareId : null
+                    }
+                  />
+                ))}
+              </div>
+            </HubSection>
           )}
         </TabsContent>
 
         <TabsContent value="balances" className="mt-4">
           {loadingBalances ? (
-            <LoadingSpinner />
+            <PageLoading className="min-h-[200px]" />
           ) : !balances?.length ? (
-            <p className="text-center text-muted-foreground">{t('expenses.allBalanced')}</p>
+            <HubEmptyMessage>{t('expenses.allBalanced')}</HubEmptyMessage>
           ) : (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -209,8 +215,8 @@ export function ExpensesPage() {
                   settleWithContactMutation.isPending && settlingContactId === balance.userId;
 
                 return (
-                  <Card key={balance.userId}>
-                    <CardContent className="flex items-center gap-3 p-4">
+                  <Card key={balance.userId} className="rounded-xl">
+                    <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
                       <Avatar className="h-9 w-9">
                         <AvatarImage src={balance.user.avatar ?? undefined} />
                         <AvatarFallback>{getInitials(balance.user.name)}</AvatarFallback>
@@ -227,7 +233,7 @@ export function ExpensesPage() {
                           {owesYou ? t('expenses.balanceOwesYou') : t('expenses.balanceYouOwe')}
                         </p>
                       </div>
-                      <div className="flex shrink-0 flex-col items-end gap-2">
+                      <div className="flex shrink-0 flex-row items-center justify-between gap-2 sm:flex-col sm:items-end">
                         <span
                           className={`text-lg font-semibold tabular-nums ${
                             owesYou
@@ -266,6 +272,6 @@ export function ExpensesPage() {
           )}
         </TabsContent>
       </Tabs>
-    </div>
+    </PageShell>
   );
 }

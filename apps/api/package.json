@@ -14,7 +14,8 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "ts-node prisma/seed.ts"
+    "db:seed": "ts-node prisma/seed.ts",
+    "repair:shopping": "ts-node scripts/repair-shopping-event-items.ts"
   },
   "dependencies": {
     "@lifehub/types": "*",

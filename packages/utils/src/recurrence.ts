@@ -1,5 +1,5 @@
 import type { Event, RecurrenceType } from '@lifehub/types';
-import { addDays } from './date';
+import { addDays, startOfDay } from './date';
 import { shouldShowDeadlineOnCalendar } from './deadline';
 
 export const RECURRENCE_INSTANCE_SEP = '@';
@@ -7,6 +7,21 @@ export const RECURRENCE_INSTANCE_SEP = '@';
 export function getEventSeriesId(eventId: string): string {
   const idx = eventId.indexOf(RECURRENCE_INSTANCE_SEP);
   return idx === -1 ? eventId : eventId.slice(0, idx);
+}
+
+export function parseRecurrenceInstanceId(eventId: string): {
+  seriesId: string;
+  occurrenceAt: Date | null;
+} {
+  const idx = eventId.indexOf(RECURRENCE_INSTANCE_SEP);
+  if (idx === -1) {
+    return { seriesId: eventId, occurrenceAt: null };
+  }
+  const timestamp = Number(eventId.slice(idx + RECURRENCE_INSTANCE_SEP.length));
+  return {
+    seriesId: eventId.slice(0, idx),
+    occurrenceAt: Number.isFinite(timestamp) ? new Date(timestamp) : null,
+  };
 }
 
 export function addMonths(date: Date, months: number): Date {
@@ -63,13 +78,18 @@ export function expandRecurringEvent(
 
   if (seriesStart > effectiveEnd) return [];
 
+  const skippedOccurrences = new Set(
+    (event.recurrenceExceptions ?? []).map((value) => startOfDay(new Date(value)).getTime()),
+  );
+
   const instances: Event[] = [];
   let cursor = advanceToRange(seriesStart, event.recurrence, rangeStart);
   let guard = 0;
 
   while (cursor <= effectiveEnd && guard++ < 500) {
     const instanceEnd = new Date(cursor.getTime() + duration);
-    if (instanceEnd >= rangeStart) {
+    const isSkipped = skippedOccurrences.has(startOfDay(cursor).getTime());
+    if (!isSkipped && instanceEnd >= rangeStart) {
       instances.push({
         ...event,
         id: `${event.id}${RECURRENCE_INSTANCE_SEP}${cursor.getTime()}`,

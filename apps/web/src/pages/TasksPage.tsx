@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Search } from 'lucide-react';
+import { CheckSquare } from 'lucide-react';
 import {
-  Input,
   Select,
   SelectContent,
   SelectItem,
@@ -12,7 +11,12 @@ import {
 } from '@lifehub/ui';
 import { api } from '@/lib/api';
 import { TaskTree } from '@/components/tasks/TaskTree';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { PageShell } from '@/components/layout/PageShell';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { PageLoading } from '@/components/layout/PageLoading';
+import { SearchField } from '@/components/shared/SearchField';
+import { FilterBar } from '@/components/shared/FilterBar';
+import { EmptyState } from '@/components/shared/EmptyState';
 import { useAuthStore } from '@/stores/auth.store';
 import type { TaskStatus } from '@lifehub/types';
 
@@ -58,8 +62,15 @@ export function TasksPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...dto }: { id: string; status?: TaskStatus; assigneeId?: string | null }) =>
-      api.updateTask(id, dto),
+    mutationFn: ({
+      id,
+      ...dto
+    }: {
+      id: string;
+      title?: string;
+      status?: TaskStatus;
+      assigneeId?: string | null;
+    }) => api.updateTask(id, dto),
     onSuccess: invalidate,
   });
 
@@ -68,25 +79,26 @@ export function TasksPage() {
     onSuccess: invalidate,
   });
 
-  if (isLoading) return <LoadingSpinner />;
+  const reorderMutation = useMutation({
+    mutationFn: api.reorderTasks,
+    onSuccess: invalidate,
+    onError: invalidate,
+  });
+
+  if (isLoading) return <PageLoading />;
+
+  const hasTasks = (tasks?.length ?? 0) > 0;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">{t('tasks.title')}</h1>
-        <p className="text-muted-foreground">{t('tasks.subtitle')}</p>
-      </div>
+    <PageShell width="wide">
+      <PageHeader title={t('tasks.title')} subtitle={t('tasks.subtitle')} />
 
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder={t('tasks.searchPlaceholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+      <FilterBar>
+        <SearchField
+          value={search}
+          onChange={setSearch}
+          placeholder={t('tasks.searchPlaceholder')}
+        />
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-full sm:w-40">
             <SelectValue placeholder={t('tasks.statusFilter')} />
@@ -94,21 +106,34 @@ export function TasksPage() {
           <SelectContent>
             <SelectItem value="all">{t('tasks.filterAll')}</SelectItem>
             <SelectItem value="todo">{t('tasks.status.todo')}</SelectItem>
-            <SelectItem value="doing">{t('tasks.status.doing')}</SelectItem>
             <SelectItem value="done">{t('tasks.status.done')}</SelectItem>
           </SelectContent>
         </Select>
-      </div>
+      </FilterBar>
 
-      <TaskTree
-        tasks={tasks ?? []}
-        people={people}
-        isCreating={createMutation.isPending}
-        onCreate={(payload) => createMutation.mutate(payload)}
-        onStatusChange={(id, status) => updateMutation.mutate({ id, status })}
-        onAssigneeChange={(id, assigneeId) => updateMutation.mutate({ id, assigneeId })}
-        onDelete={(id) => deleteMutation.mutate(id)}
-      />
-    </div>
+      {!hasTasks && !search && statusFilter === 'all' ? (
+        <EmptyState
+          icon={CheckSquare}
+          title={t('tasks.noTasks')}
+          description={t('tasks.noTasksDescription')}
+        />
+      ) : (
+        <TaskTree
+          tasks={tasks ?? []}
+          people={people}
+          isCreating={createMutation.isPending}
+          deleteConfirm={t('tasks.deleteConfirm')}
+          onCreate={(payload) => createMutation.mutate(payload)}
+          onStatusChange={(id, status) => updateMutation.mutate({ id, status })}
+          onTitleChange={async (id, title) => {
+            await updateMutation.mutateAsync({ id, title });
+          }}
+          onAssigneeChange={(id, assigneeId) => updateMutation.mutate({ id, assigneeId })}
+          onDelete={(id) => deleteMutation.mutate(id)}
+          onReorder={(updates) => reorderMutation.mutate(updates)}
+          isReordering={reorderMutation.isPending}
+        />
+      )}
+    </PageShell>
   );
 }

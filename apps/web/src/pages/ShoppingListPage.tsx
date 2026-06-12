@@ -2,23 +2,47 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
-  Plus,
   ShoppingCart,
   Trash2,
   ShoppingBag,
-  ChevronDown,
-  ChevronUp,
   FolderPlus,
   Home,
   Users,
   Share2,
+  MoreHorizontal,
+  Pencil,
+  EyeOff,
+  Eye,
 } from 'lucide-react';
-import { Button, Input } from '@lifehub/ui';
+import {
+  Button,
+  Input,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@lifehub/ui';
+import {
+  HubSection,
+  HubAddRow,
+  HubEmptyMessage,
+  SectionChipTabs,
+  CollapsiblePanel,
+  ShoppingHubRow,
+  hubListClass,
+} from '@/components/hub';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth.store';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { PageShell } from '@/components/layout/PageShell';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { PageLoading } from '@/components/layout/PageLoading';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { InlineFormPanel } from '@/components/shared/InlineFormPanel';
+import { ContactChipPicker } from '@/components/shared/ContactChipPicker';
 import type { ShoppingListItem, ShoppingSection } from '@lifehub/types';
+import { EntityAccessPanel } from '@/components/shared/EntityAccessPanel';
+import { buildShoppingSectionAccessEntries } from '@/lib/entity-access';
 
 function groupBySection(items: ShoppingListItem[], sections: ShoppingSection[]) {
   return sections.map((section) => ({
@@ -35,11 +59,11 @@ export function ShoppingListPage() {
   const [newSectionName, setNewSectionName] = useState('');
   const [activeSectionId, setActiveSectionId] = useState('');
   const [addAsInStock, setAddAsInStock] = useState(false);
-  const [showAtHome, setShowAtHome] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [shareNewSection, setShareNewSection] = useState(false);
   const [newMemberIds, setNewMemberIds] = useState<string[]>([]);
-  const [sharingSectionId, setSharingSectionId] = useState<string | null>(null);
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [editSectionName, setEditSectionName] = useState('');
   const [editMemberIds, setEditMemberIds] = useState<string[]>([]);
 
   const { data: sections = [], isLoading: loadingSections } = useQuery({
@@ -47,41 +71,69 @@ export function ShoppingListPage() {
     queryFn: () => api.getShoppingSections(),
   });
 
+  const visibleSections = useMemo(() => sections.filter((s) => !s.hidden), [sections]);
+  const hiddenSections = useMemo(() => sections.filter((s) => s.hidden), [sections]);
+
   const { data: contacts = [] } = useQuery({
     queryKey: ['contacts'],
     queryFn: () => api.getContacts(),
   });
 
+  const shoppingListKey = ['shopping-list', currentUser?.id] as const;
+
   const { data: items, isLoading: loadingItems } = useQuery({
-    queryKey: ['shopping-list'],
+    queryKey: shoppingListKey,
     queryFn: () => api.getShoppingList(),
+    enabled: !!currentUser?.id,
   });
 
   useEffect(() => {
-    if (!sections.length) {
+    if (!visibleSections.length) {
       setActiveSectionId('');
       return;
     }
-    if (!activeSectionId || !sections.some((s) => s.id === activeSectionId)) {
-      setActiveSectionId(sections[0].id);
+    if (!activeSectionId || !visibleSections.some((s) => s.id === activeSectionId)) {
+      setActiveSectionId(visibleSections[0].id);
     }
-  }, [sections, activeSectionId]);
+  }, [visibleSections, activeSectionId]);
 
-  const toBuy = useMemo(() => items?.filter((i) => !i.done) ?? [], [items]);
-  const atHome = useMemo(() => items?.filter((i) => i.done) ?? [], [items]);
-  const groupedToBuy = useMemo(() => groupBySection(toBuy, sections), [toBuy, sections]);
-  const groupedAtHome = useMemo(() => groupBySection(atHome, sections), [atHome, sections]);
+  const visibleItems = useMemo(
+    () =>
+      items?.filter((item) => {
+        if (!item.eventItemId) return true;
+        if (item.assigneeId) return item.assigneeId === currentUser?.id;
+        return item.ownerId === currentUser?.id;
+      }) ?? [],
+    [items, currentUser?.id],
+  );
+
+  const toBuy = useMemo(() => visibleItems.filter((i) => !i.done), [visibleItems]);
+  const atHome = useMemo(() => visibleItems.filter((i) => i.done), [visibleItems]);
+  const groupedToBuy = useMemo(() => groupBySection(toBuy, visibleSections), [toBuy, visibleSections]);
   const uncategorizedToBuy = useMemo(
-    () => toBuy.filter((item) => !item.sectionId || !sections.some((s) => s.id === item.sectionId)),
-    [toBuy, sections],
+    () =>
+      toBuy.filter(
+        (item) => !item.sectionId || !visibleSections.some((s) => s.id === item.sectionId),
+      ),
+    [toBuy, visibleSections],
   );
   const uncategorizedAtHome = useMemo(
-    () => atHome.filter((item) => !item.sectionId || !sections.some((s) => s.id === item.sectionId)),
-    [atHome, sections],
+    () =>
+      atHome.filter(
+        (item) => !item.sectionId || !visibleSections.some((s) => s.id === item.sectionId),
+      ),
+    [atHome, visibleSections],
+  );
+  const activeSectionAtHome = useMemo(
+    () =>
+      activeSectionId
+        ? atHome.filter((item) => item.sectionId === activeSectionId)
+        : uncategorizedAtHome,
+    [atHome, activeSectionId, uncategorizedAtHome],
   );
 
-  const activeSection = sections.find((s) => s.id === activeSectionId);
-  const sharingSection = sections.find((s) => s.id === sharingSectionId);
+  const activeSection = visibleSections.find((s) => s.id === activeSectionId);
+  const editingSection = sections.find((s) => s.id === editingSectionId);
 
   const invalidateDashboard = () => {
     queryClient.invalidateQueries({ queryKey: ['dashboard'] });
@@ -101,13 +153,22 @@ export function ShoppingListPage() {
   });
 
   const updateSectionMutation = useMutation({
-    mutationFn: ({ id, memberIds }: { id: string; memberIds: string[] }) =>
-      api.updateShoppingSection(id, { memberIds }),
+    mutationFn: ({
+      id,
+      name,
+      memberIds,
+      hidden,
+    }: {
+      id: string;
+      name?: string;
+      memberIds?: string[];
+      hidden?: boolean;
+    }) => api.updateShoppingSection(id, { name, memberIds, hidden }),
     onSuccess: (section) => {
       queryClient.setQueryData<ShoppingSection[]>(['shopping-sections'], (old) =>
         old?.map((s) => (s.id === section.id ? section : s)) ?? [],
       );
-      setSharingSectionId(null);
+      setEditingSectionId(null);
     },
   });
 
@@ -117,12 +178,12 @@ export function ShoppingListPage() {
       queryClient.setQueryData<ShoppingSection[]>(['shopping-sections'], (old) =>
         old?.filter((s) => s.id !== sectionId) ?? [],
       );
-      queryClient.setQueryData<ShoppingListItem[]>(['shopping-list'], (old) =>
+      queryClient.setQueryData<ShoppingListItem[]>(shoppingListKey, (old) =>
         old?.map((item) =>
           item.sectionId === sectionId ? { ...item, sectionId: null, section: undefined } : item,
         ) ?? [],
       );
-      if (sharingSectionId === sectionId) setSharingSectionId(null);
+      if (editingSectionId === sectionId) setEditingSectionId(null);
     },
   });
 
@@ -131,12 +192,11 @@ export function ShoppingListPage() {
     onSuccess: (item) => {
       setNewTitle('');
       setAddAsInStock(false);
-      queryClient.setQueryData<ShoppingListItem[]>(['shopping-list'], (old) => {
+      queryClient.setQueryData<ShoppingListItem[]>(shoppingListKey, (old) => {
         if (!old) return [item];
         if (old.some((i) => i.id === item.id)) return old;
         return [...old, item];
       });
-      if (item.done) setShowAtHome(true);
       invalidateDashboard();
     },
   });
@@ -145,19 +205,36 @@ export function ShoppingListPage() {
     mutationFn: ({ id, done }: { id: string; done: boolean }) =>
       api.updateShoppingItem(id, { done }),
     onSuccess: (updated) => {
-      queryClient.setQueryData<ShoppingListItem[]>(['shopping-list'], (old) =>
+      queryClient.setQueryData<ShoppingListItem[]>(shoppingListKey, (old) =>
         old?.map((item) => (item.id === updated.id ? updated : item)) ?? [],
       );
-      if (updated.done) setShowAtHome(true);
       invalidateDashboard();
+      if (updated.eventItemId) {
+        queryClient.invalidateQueries({ queryKey: ['event-detail'] });
+        queryClient.invalidateQueries({ queryKey: ['events'] });
+      }
+    },
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: ({ id, title }: { id: string; title: string }) =>
+      api.updateShoppingItem(id, { title }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData<ShoppingListItem[]>(shoppingListKey, (old) =>
+        old?.map((item) => (item.id === updated.id ? updated : item)) ?? [],
+      );
+      if (updated.eventItemId) {
+        queryClient.invalidateQueries({ queryKey: ['event-detail'] });
+        queryClient.invalidateQueries({ queryKey: ['events'] });
+      }
     },
   });
 
   const handleDelete = async (id: string) => {
     if (deletingId) return;
 
-    const previous = queryClient.getQueryData<ShoppingListItem[]>(['shopping-list']);
-    queryClient.setQueryData<ShoppingListItem[]>(['shopping-list'], (old) =>
+    const previous = queryClient.getQueryData<ShoppingListItem[]>(shoppingListKey);
+    queryClient.setQueryData<ShoppingListItem[]>(shoppingListKey, (old) =>
       old?.filter((item) => item.id !== id) ?? [],
     );
     setDeletingId(id);
@@ -167,56 +244,42 @@ export function ShoppingListPage() {
       invalidateDashboard();
     } catch {
       if (previous) {
-        queryClient.setQueryData(['shopping-list'], previous);
+        queryClient.setQueryData(shoppingListKey, previous);
       }
     } finally {
       setDeletingId(null);
     }
   };
 
-  const toggleMember = (userId: string, list: string[], setList: (ids: string[]) => void) => {
-    setList(list.includes(userId) ? list.filter((id) => id !== userId) : [...list, userId]);
-  };
-
-  const openSharing = (section: ShoppingSection) => {
-    setSharingSectionId(section.id);
+  const openSectionEdit = (section: ShoppingSection) => {
+    setEditingSectionId(section.id);
+    setEditSectionName(section.name);
     setEditMemberIds(section.members?.map((m) => m.userId) ?? []);
   };
 
-  const renderContactPicker = (
-    selectedIds: string[],
-    onChange: (ids: string[]) => void,
-  ) => {
-    if (!contacts.length) {
-      return <p className="text-xs text-muted-foreground">{t('shopping.noContacts')}</p>;
+  const handleDeleteSection = (section: ShoppingSection) => {
+    const itemCount = (items ?? []).filter((item) => item.sectionId === section.id).length;
+    const message = t('shopping.deleteSectionConfirm', {
+      name: section.name,
+      count: itemCount,
+    });
+    if (window.confirm(message)) {
+      deleteSectionMutation.mutate(section.id);
     }
-    return (
-      <div className="flex flex-wrap gap-2">
-        {contacts.map((c) => {
-          const user = c.user;
-          const checked = selectedIds.includes(user.id);
-          return (
-            <label
-              key={c.id}
-              className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                checked ? 'border-primary bg-primary/10 text-primary' : 'border-border'
-              }`}
-            >
-              <input
-                type="checkbox"
-                className="sr-only"
-                checked={checked}
-                onChange={() => toggleMember(user.id, selectedIds, onChange)}
-              />
-              {user.name}
-            </label>
-          );
-        })}
-      </div>
-    );
   };
 
-  if (loadingSections || loadingItems) return <LoadingSpinner />;
+  const handleSaveSection = () => {
+    if (!editingSection) return;
+    const name = editSectionName.trim();
+    if (!name) return;
+    updateSectionMutation.mutate({
+      id: editingSection.id,
+      name,
+      memberIds: editMemberIds,
+    });
+  };
+
+  if (loadingSections || loadingItems) return <PageLoading />;
 
   const handleAddSection = () => {
     const name = newSectionName.trim();
@@ -233,101 +296,114 @@ export function ShoppingListPage() {
     createMutation.mutate({ title, sectionId: activeSectionId, inStock: addAsInStock });
   };
 
+  const shoppingContextLabel = (item: ShoppingListItem) => {
+    const parts: string[] = [];
+    if (item.eventTitle) parts.push(item.eventTitle);
+    if (item.assignee && item.assigneeId !== currentUser?.id) {
+      parts.push(t('shopping.assignedTo', { name: item.assignee.name }));
+    }
+    return parts.length > 0 ? parts.join(' · ') : undefined;
+  };
+
   const renderToBuyItem = (item: ShoppingListItem) => (
-    <li
+    <ShoppingHubRow
       key={item.id}
-      className="flex items-center gap-3 rounded-lg border bg-card px-3 py-3 shadow-sm"
-    >
-      <input
-        type="checkbox"
-        checked={false}
-        title={t('shopping.markInStock')}
-        onChange={() => toggleMutation.mutate({ id: item.id, done: true })}
-        className="h-4 w-4 shrink-0 rounded"
-      />
-      <div className="min-w-0 flex-1">
-        <span className="text-sm font-medium">{item.title}</span>
-        {item.eventTitle && (
-          <p className="truncate text-xs text-muted-foreground">{item.eventTitle}</p>
-        )}
-      </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-        disabled={deletingId === item.id}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          void handleDelete(item.id);
-        }}
-      >
-        <Trash2 className="h-4 w-4" />
-      </Button>
-    </li>
+      title={item.title}
+      contextLabel={shoppingContextLabel(item)}
+      assignee={item.assignee}
+      deleting={deletingId === item.id}
+      onToggle={() => toggleMutation.mutate({ id: item.id, done: true })}
+      onTitleChange={async (title) => {
+        await renameMutation.mutateAsync({ id: item.id, title });
+      }}
+      onDelete={() => void handleDelete(item.id)}
+    />
   );
 
   const renderAtHomeItem = (item: ShoppingListItem) => (
-    <li
+    <ShoppingHubRow
       key={item.id}
-      className="flex items-center gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2"
-    >
-      <Home className="h-4 w-4 shrink-0 text-emerald-600" />
-      <div className="min-w-0 flex-1">
-        <span className="text-sm font-medium">{item.title}</span>
-        {item.eventTitle && (
-          <p className="truncate text-xs text-muted-foreground">{item.eventTitle}</p>
-        )}
-      </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="h-8 text-xs"
-        title={t('shopping.needToBuy')}
-        onClick={() => toggleMutation.mutate({ id: item.id, done: false })}
-      >
-        <ShoppingBag className="mr-1 h-3.5 w-3.5" />
-        {t('shopping.needToBuy')}
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-        disabled={deletingId === item.id}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          void handleDelete(item.id);
-        }}
-      >
-        <Trash2 className="h-4 w-4" />
-      </Button>
-    </li>
+      title={item.title}
+      done
+      contextLabel={shoppingContextLabel(item)}
+      assignee={item.assignee}
+      deleting={deletingId === item.id}
+      restoreLabel={t('shopping.needToBuy')}
+      onRestore={() => toggleMutation.mutate({ id: item.id, done: false })}
+      onTitleChange={async (title) => {
+        await renameMutation.mutateAsync({ id: item.id, title });
+      }}
+      onDelete={() => void handleDelete(item.id)}
+    />
   );
 
-  return (
-    <div className="mx-auto max-w-lg space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">{t('shopping.title')}</h1>
-        <p className="text-muted-foreground">{t('shopping.subtitle')}</p>
-      </div>
+  const sectionTabs = visibleSections.map((section) => {
+    const isOwner = section.ownerId === currentUser?.id;
+    return {
+      id: section.id,
+      label: section.name,
+      icon: section.isShared ? <Users className="h-3.5 w-3.5 opacity-70" /> : undefined,
+      menu: isOwner ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => openSectionEdit(section)}>
+              <Pencil className="mr-2 h-4 w-4" />
+              {t('shopping.editSection')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openSectionEdit(section)}>
+              <Share2 className="mr-2 h-4 w-4" />
+              {t('shopping.shareSection')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={updateSectionMutation.isPending}
+              onClick={() => updateSectionMutation.mutate({ id: section.id, hidden: true })}
+            >
+              <EyeOff className="mr-2 h-4 w-4" />
+              {t('shopping.hideSection')}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive"
+              disabled={deleteSectionMutation.isPending}
+              onClick={() => handleDeleteSection(section)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {t('shopping.deleteSection')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : undefined,
+    };
+  });
 
-      <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
-        <p className="text-sm font-medium">{t('shopping.addSection')}</p>
-        <div className="flex gap-2">
+  return (
+    <PageShell width="narrow">
+      <PageHeader title={t('shopping.title')} subtitle={t('shopping.subtitle')} />
+
+      <InlineFormPanel title={t('shopping.addSection')}>
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Input
             placeholder={t('shopping.newSectionPlaceholder')}
             value={newSectionName}
             onChange={(e) => setNewSectionName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAddSection()}
+            className="min-w-0 flex-1"
           />
           <Button
             type="button"
             disabled={!newSectionName.trim() || createSectionMutation.isPending}
             onClick={handleAddSection}
+            className="shrink-0"
           >
             <FolderPlus className="h-4 w-4" />
           </Button>
@@ -346,14 +422,38 @@ export function ShoppingListPage() {
           {t('shopping.shareSection')}
         </label>
         {shareNewSection && (
-          <div className="space-y-1.5 pl-6">
+          <div className="space-y-1.5 pl-0 sm:pl-6">
             <p className="text-xs text-muted-foreground">{t('shopping.shareSectionHint')}</p>
-            {renderContactPicker(newMemberIds, setNewMemberIds)}
+            <ContactChipPicker
+              contacts={contacts}
+              selectedIds={newMemberIds}
+              onChange={setNewMemberIds}
+            />
           </div>
         )}
-      </div>
+      </InlineFormPanel>
 
-      {sections.length === 0 ? (
+      {hiddenSections.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed bg-muted/20 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">{t('shopping.hiddenSections')}:</span>
+          {hiddenSections.map((section) => (
+            <Button
+              key={section.id}
+              type="button"
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              disabled={updateSectionMutation.isPending}
+              onClick={() => updateSectionMutation.mutate({ id: section.id, hidden: false })}
+            >
+              <Eye className="h-3.5 w-3.5" />
+              {section.name}
+            </Button>
+          ))}
+        </div>
+      )}
+
+      {visibleSections.length === 0 ? (
         <EmptyState
           icon={ShoppingCart}
           title={t('shopping.noSections')}
@@ -361,75 +461,43 @@ export function ShoppingListPage() {
         />
       ) : (
         <>
-          <div className="flex flex-wrap gap-2">
-            {sections.map((section) => {
-              const isOwner = section.ownerId === currentUser?.id;
-              const memberNames = section.members?.map((m) => m.user?.name).filter(Boolean) ?? [];
+          <SectionChipTabs
+            tabs={sectionTabs}
+            activeId={activeSectionId}
+            onChange={setActiveSectionId}
+          />
 
-              return (
-                <div key={section.id} className="flex items-center gap-0.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={activeSectionId === section.id ? 'default' : 'outline'}
-                    onClick={() => setActiveSectionId(section.id)}
-                    className="gap-1.5"
-                  >
-                    {section.isShared && <Users className="h-3.5 w-3.5 opacity-70" />}
-                    {section.name}
-                  </Button>
-                  {isOwner && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground"
-                      title={t('shopping.manageSharing')}
-                      onClick={() => openSharing(section)}
-                    >
-                      <Share2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                  {isOwner && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      disabled={deleteSectionMutation.isPending}
-                      onClick={() => deleteSectionMutation.mutate(section.id)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                  {section.isShared && memberNames.length > 0 && (
-                    <span className="sr-only">
-                      {t('shopping.sharedWith', { names: memberNames.join(', ') })}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {activeSection && activeSection.isShared && (
+            <EntityAccessPanel entries={buildShoppingSectionAccessEntries(activeSection)} />
+          )}
 
-          {sharingSection && sharingSection.ownerId === currentUser?.id && (
-            <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
-              <p className="text-sm font-medium">
-                {t('shopping.manageSharing')} · {sharingSection.name}
-              </p>
-              <p className="text-xs text-muted-foreground">{t('shopping.shareSectionHint')}</p>
-              {renderContactPicker(editMemberIds, setEditMemberIds)}
-              <div className="flex gap-2">
+          {editingSection && editingSection.ownerId === currentUser?.id && (
+            <InlineFormPanel title={t('shopping.editSectionTitle')}>
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground" htmlFor="edit-section-name">
+                  {t('shopping.sectionName')}
+                </label>
+                <Input
+                  id="edit-section-name"
+                  value={editSectionName}
+                  onChange={(e) => setEditSectionName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveSection()}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-xs text-muted-foreground">{t('shopping.shareSectionHint')}</p>
+                <ContactChipPicker
+                  contacts={contacts}
+                  selectedIds={editMemberIds}
+                  onChange={setEditMemberIds}
+                />
+              </div>
+              <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
                   size="sm"
-                  disabled={updateSectionMutation.isPending}
-                  onClick={() =>
-                    updateSectionMutation.mutate({
-                      id: sharingSection.id,
-                      memberIds: editMemberIds,
-                    })
-                  }
+                  disabled={!editSectionName.trim() || updateSectionMutation.isPending}
+                  onClick={handleSaveSection}
                 >
                   {t('common.save')}
                 </Button>
@@ -437,12 +505,12 @@ export function ShoppingListPage() {
                   type="button"
                   size="sm"
                   variant="ghost"
-                  onClick={() => setSharingSectionId(null)}
+                  onClick={() => setEditingSectionId(null)}
                 >
                   {t('common.close')}
                 </Button>
               </div>
-            </div>
+            </InlineFormPanel>
           )}
 
           {activeSection && activeSection.ownerId !== currentUser?.id && (
@@ -452,21 +520,14 @@ export function ShoppingListPage() {
           )}
 
           <div className="space-y-2">
-            <div className="flex gap-2">
-              <Input
-                placeholder={t('shopping.addPlaceholder')}
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddItem()}
-              />
-              <Button
-                type="button"
-                disabled={!newTitle.trim() || !activeSectionId || createMutation.isPending}
-                onClick={handleAddItem}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
+            <HubAddRow
+              value={newTitle}
+              onChange={setNewTitle}
+              onSubmit={handleAddItem}
+              placeholder={t('shopping.addPlaceholder')}
+              disabled={!activeSectionId}
+              isPending={createMutation.isPending}
+            />
             <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
               <input
                 type="checkbox"
@@ -479,13 +540,9 @@ export function ShoppingListPage() {
             </label>
           </div>
 
-          <div className="space-y-3">
-            <h2 className="flex items-center gap-2 text-sm font-semibold">
-              <ShoppingBag className="h-4 w-4" />
-              {t('shopping.toBuy')}
-            </h2>
+          <HubSection icon={ShoppingBag} title={t('shopping.toBuy')}>
             {toBuy.length ? (
-              <div className="space-y-5">
+              <div className="space-y-4">
                 {groupedToBuy.map(
                   ({ section, items: sectionItems }) =>
                     sectionItems.length > 0 && (
@@ -494,9 +551,9 @@ export function ShoppingListPage() {
                           {section.isShared && <Users className="h-3.5 w-3.5" />}
                           {section.name}
                         </h3>
-                        <ul className="space-y-2">
+                        <div className={hubListClass}>
                           {sectionItems.map((item) => renderToBuyItem(item))}
-                        </ul>
+                        </div>
                       </section>
                     ),
                 )}
@@ -505,62 +562,40 @@ export function ShoppingListPage() {
                     <h3 className="mb-2 text-sm font-medium text-muted-foreground">
                       {t('shopping.otherSection')}
                     </h3>
-                    <ul className="space-y-2">
+                    <div className={hubListClass}>
                       {uncategorizedToBuy.map((item) => renderToBuyItem(item))}
-                    </ul>
+                    </div>
                   </section>
                 )}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">{t('shopping.empty')}</p>
+              <HubEmptyMessage>{t('shopping.empty')}</HubEmptyMessage>
             )}
-          </div>
+          </HubSection>
         </>
       )}
 
-      {atHome.length > 0 && (
-        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-2">
-          <button
-            type="button"
-            onClick={() => setShowAtHome(!showAtHome)}
-            className="flex w-full items-center justify-between text-sm font-semibold text-emerald-700 dark:text-emerald-400"
-          >
+      {activeSectionAtHome.length > 0 && (
+        <CollapsiblePanel
+          variant="success"
+          title={
             <span className="flex items-center gap-2">
               <Home className="h-4 w-4" />
-              {t('shopping.atHome', { count: atHome.length })}
+              {t('shopping.atHomeInSection', {
+                section: activeSection?.name ?? t('shopping.otherSection'),
+                count: activeSectionAtHome.length,
+              })}
             </span>
-            {showAtHome ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </button>
-          <p className="text-xs text-muted-foreground">{t('shopping.atHomeHint')}</p>
-          {showAtHome && (
-            <div className="space-y-4 pt-1">
-              {groupedAtHome.map(
-                ({ section, items: sectionItems }) =>
-                  sectionItems.length > 0 && (
-                    <section key={section.id}>
-                      <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-600/80">
-                        {section.name}
-                      </h3>
-                      <ul className="space-y-1.5">
-                        {sectionItems.map((item) => renderAtHomeItem(item))}
-                      </ul>
-                    </section>
-                  ),
-              )}
-              {uncategorizedAtHome.length > 0 && (
-                <section>
-                  <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {t('shopping.otherSection')}
-                  </h3>
-                  <ul className="space-y-1.5">
-                    {uncategorizedAtHome.map((item) => renderAtHomeItem(item))}
-                  </ul>
-                </section>
-              )}
-            </div>
-          )}
-        </div>
+          }
+          hint={t('shopping.atHomeHintInSection', {
+            section: activeSection?.name ?? t('shopping.otherSection'),
+          })}
+        >
+          <div className={hubListClass}>
+            {activeSectionAtHome.map((item) => renderAtHomeItem(item))}
+          </div>
+        </CollapsiblePanel>
       )}
-    </div>
+    </PageShell>
   );
 }

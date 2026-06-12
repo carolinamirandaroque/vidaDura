@@ -131,7 +131,7 @@ export function DashboardPage() {
             to="/tasks"
             icon={CheckSquare}
             label={t('dashboard.statTasks')}
-            value={stats.tasksTodo + stats.tasksDoing}
+            value={stats.tasksTodo}
             hint={t('dashboard.statTasksHint', { done: stats.tasksDone, total: stats.tasksTotal })}
             accent="from-emerald-500/15 to-emerald-500/5 border-emerald-500/20"
           />
@@ -225,10 +225,6 @@ export function DashboardPage() {
                   <div className="flex items-center gap-2">
                     <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
                     {t('tasks.status.todo')}: <strong>{stats?.tasksTodo}</strong>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-amber-500" />
-                    {t('tasks.status.doing')}: <strong>{stats?.tasksDoing}</strong>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="h-2 w-2 rounded-full bg-emerald-500" />

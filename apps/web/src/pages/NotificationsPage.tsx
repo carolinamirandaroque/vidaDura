@@ -4,7 +4,9 @@ import { Bell, CheckCheck } from 'lucide-react';
 import { Button, Card, CardContent, Badge } from '@lifehub/ui';
 import { api } from '@/lib/api';
 import { useFormatters } from '@/hooks/useFormatters';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { PageShell } from '@/components/layout/PageShell';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { PageLoading } from '@/components/layout/PageLoading';
 import { EmptyState } from '@/components/shared/EmptyState';
 
 export function NotificationsPage() {
@@ -27,19 +29,19 @@ export function NotificationsPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
   });
 
-  if (isLoading) return <LoadingSpinner />;
+  if (isLoading) return <PageLoading />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">{t('notifications.title')}</h1>
-          <p className="text-muted-foreground">{t('notifications.subtitle')}</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => markAllMutation.mutate()}>
-          <CheckCheck className="mr-2 h-4 w-4" /> {t('notifications.markAllRead')}
-        </Button>
-      </div>
+    <PageShell width="content">
+      <PageHeader
+        title={t('notifications.title')}
+        subtitle={t('notifications.subtitle')}
+        actions={
+          <Button variant="outline" size="sm" onClick={() => markAllMutation.mutate()}>
+            <CheckCheck className="mr-2 h-4 w-4" /> {t('notifications.markAllRead')}
+          </Button>
+        }
+      />
 
       {!notifications?.length ? (
         <EmptyState
@@ -52,12 +54,12 @@ export function NotificationsPage() {
           {notifications.map((notification) => (
             <Card
               key={notification.id}
-              className={notification.read ? 'opacity-60' : ''}
+              className={`rounded-xl transition-opacity ${notification.read ? 'opacity-60' : 'cursor-pointer hover:bg-accent/20'}`}
               onClick={() => !notification.read && markReadMutation.mutate(notification.id)}
             >
               <CardContent className="flex items-start gap-3 p-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-medium">{notification.title}</h3>
                     {!notification.read && <Badge>{t('notifications.new')}</Badge>}
                   </div>
@@ -71,6 +73,6 @@ export function NotificationsPage() {
           ))}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

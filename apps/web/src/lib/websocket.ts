@@ -20,7 +20,10 @@ class WebSocketClient {
     const events: WsEvent[] = [
       'notification',
       'event_updated',
+      'event_deleted',
+      'event_removed',
       'task_updated',
+      'shopping_list_updated',
       'expense_updated',
       'connection_updated',
     ];

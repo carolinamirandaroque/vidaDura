@@ -1,5 +1,48 @@
 import type { Task, TaskStatus } from '@lifehub/types';
 
+export function isEventRootTask(task: Pick<Task, 'eventId' | 'parentTaskId'>): boolean {
+  return Boolean(task.eventId && !task.parentTaskId);
+}
+
+/**
+ * Personal task list visibility for event tasks:
+ * - assigned → only the assignee sees it
+ * - unassigned → only the task owner (creator) sees it; other collaborators see it in the event hub only
+ */
+export function isPersonalEventTaskVisible(
+  task: Pick<Task, 'eventId' | 'assigneeId' | 'ownerId'>,
+  userId: string,
+): boolean {
+  if (!task.eventId) return true;
+  if (task.assigneeId) return task.assigneeId === userId;
+  return task.ownerId === userId;
+}
+
+type EventTaskNode = Pick<Task, 'id' | 'eventId' | 'assigneeId' | 'ownerId' | 'parentTaskId'>;
+
+/** IDs visible on the personal list, including ancestor context but skipping unassigned event roots. */
+export function collectVisibleEventTaskIds(eventTasks: EventTaskNode[], userId: string): Set<string> {
+  const visibleIds = new Set<string>();
+  const byId = new Map(eventTasks.map((task) => [task.id, task]));
+
+  for (const task of eventTasks) {
+    if (!isPersonalEventTaskVisible(task, userId)) continue;
+    let current: EventTaskNode | undefined = task;
+    while (current) {
+      if (isEventRootTask(current)) {
+        if (isPersonalEventTaskVisible(current, userId)) {
+          visibleIds.add(current.id);
+        }
+        break;
+      }
+      visibleIds.add(current.id);
+      current = current.parentTaskId ? byId.get(current.parentTaskId) : undefined;
+    }
+  }
+
+  return visibleIds;
+}
+
 export function calculateCompletionPercentage(task: Task): number {
   if (!task.children || task.children.length === 0) {
     return task.status === 'done' ? 100 : 0;
@@ -57,7 +100,6 @@ export function countTasksByStatus(tasks: Task[], status: TaskStatus): number {
 export function filterTaskTree(tasks: Task[], predicate: (task: Task) => boolean): Task[] {
   const filter = (taskList: Task[]): Task[] => {
     return taskList
-      .filter(predicate)
       .map((task) => ({
         ...task,
         children: task.children ? filter(task.children) : [],
