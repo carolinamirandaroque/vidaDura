@@ -1,5 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { startOfDay, endOfDay, addDays, buildTaskTree } from '@lifehub/utils';
+import {
+  startOfDay,
+  endOfDay,
+  addDays,
+  addDaysInTimeZone,
+  buildTaskTree,
+  endOfDayInTimeZone,
+  eventOverlapsRange,
+  startOfDayInTimeZone,
+} from '@lifehub/utils';
 import { EventsRepository } from '../events/events.repository';
 import { TasksRepository } from '../tasks/tasks.repository';
 import { ExpensesRepository } from '../expenses/expenses.repository';
@@ -8,6 +17,7 @@ import { ConnectionsRepository } from '../connections/connections.repository';
 import { NotificationsRepository } from '../notifications/notifications.repository';
 import { ShoppingListRepository } from '../shopping-list/shopping-list.repository';
 import { EventsService } from '../events/events.service';
+import { UsersRepository } from '../users/users.repository';
 import type { DashboardData, DashboardWeekDay, Task } from '@lifehub/types';
 
 @Injectable()
@@ -21,29 +31,29 @@ export class DashboardService {
     private notificationsRepo: NotificationsRepository,
     private shoppingListRepo: ShoppingListRepository,
     private eventsService: EventsService,
+    private usersRepo: UsersRepository,
   ) {}
 
   private buildWeekActivity(
-    todayStart: Date,
-    todayEvents: { startDate: Date }[],
-    upcomingEvents: { startDate: Date }[],
+    now: Date,
+    timeZone: string,
+    todayEvents: { startDate: Date; endDate: Date }[],
+    upcomingEvents: { startDate: Date; endDate: Date }[],
     locale = 'pt-PT',
   ): DashboardWeekDay[] {
     const all = [...todayEvents, ...upcomingEvents];
     const days: DashboardWeekDay[] = [];
 
     for (let i = 0; i < 7; i++) {
-      const day = addDays(todayStart, i);
-      const dayStart = startOfDay(day);
-      const dayEnd = endOfDay(day);
-      const count = all.filter((e) => {
-        const start = new Date(e.startDate);
-        return start >= dayStart && start <= dayEnd;
-      }).length;
+      const dayStart = addDaysInTimeZone(timeZone, now, i);
+      const dayEnd = endOfDayInTimeZone(timeZone, dayStart);
+      const count = all.filter((e) =>
+        eventOverlapsRange(e.startDate, e.endDate, dayStart, dayEnd),
+      ).length;
 
       days.push({
         date: dayStart.toISOString(),
-        label: dayStart.toLocaleDateString(locale, { weekday: 'short' }),
+        label: dayStart.toLocaleDateString(locale, { weekday: 'short', timeZone }),
         count,
       });
     }
@@ -52,9 +62,12 @@ export class DashboardService {
   }
 
   async getDashboard(userId: string): Promise<DashboardData> {
-    const todayStart = startOfDay();
-    const todayEnd = endOfDay();
-    const weekEnd = addDays(todayStart, 7);
+    const user = await this.usersRepo.findById(userId);
+    const timeZone = user?.timezone ?? 'Europe/Lisbon';
+    const now = new Date();
+    const todayStart = startOfDayInTimeZone(timeZone, now);
+    const todayEnd = endOfDayInTimeZone(timeZone, now);
+    const weekEnd = addDaysInTimeZone(timeZone, now, 7);
 
     const [todayEvents, upcomingEvents, allTasks, expenses, shoppingItems, pendingInvites, connections, unreadCount, debts] =
       await Promise.all([
@@ -125,7 +138,7 @@ export class DashboardService {
     return {
       stats,
       debts,
-      weekActivity: this.buildWeekActivity(todayStart, todayEvents, upcomingEvents),
+      weekActivity: this.buildWeekActivity(now, timeZone, todayEvents, upcomingEvents),
       todayEvents: todayEvents.map((e) => this.eventsService.mapEvent(e)),
       upcomingEvents: upcomingEvents.map((e) => this.eventsService.mapEvent(e)),
       pendingTasks: taskTree,

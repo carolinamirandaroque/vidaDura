@@ -7,6 +7,7 @@ import { ExpensesModule } from '../expenses/expenses.module';
 import { ConnectionsModule } from '../connections/connections.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ShoppingListModule } from '../shopping-list/shopping-list.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { ShoppingListModule } from '../shopping-list/shopping-list.module';
     ConnectionsModule,
     NotificationsModule,
     ShoppingListModule,
+    UsersModule,
   ],
   controllers: [DashboardController],
   providers: [DashboardService],
